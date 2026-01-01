@@ -30,7 +30,7 @@ If you want to skip creation of the k3s server as per this repo and instead prov
 2. Your cluster is accessible via `kubectl`. Terraform will look for a kubectl context named `homelab`.
 
 The Ansible Playbook provisions a minimimal k3s cluster:
-```
+```bash
 kubectl get pods -A
 NAMESPACE     NAME                                      READY   STATUS    RESTARTS   AGE
 kube-system   coredns-6d668d687-n69dw                   1/1     Running   0          38m
@@ -53,9 +53,9 @@ cp config/homelab.example.yml config/homelab.yml
 Update `ingress.base_domain` and `ingress.prefixes` to control hostnames.
 
 #### 2. Install PyYAML
-````bash
+```bash
 python3 -m pip install pyyaml
-````
+```
 
 #### 3. Render inventory & tfvars
 ```bash
@@ -68,20 +68,25 @@ This generates:
 
 ### Ansible Configuration
 
-#### 1. Generate Ansible User SSH key
+#### 1. Navigate to the Ansible directory
+```bash
+cd bootstrap/terraform
+```
+
+#### 3. Generate Ansible User SSH key
 
 ```bash
 mkdir -p ~/.ssh/homelab
 ssh-keygen -t ed25519 -f ~/.ssh/homelab/homelab_ansible -C "ansible@homelab"
 ```
 
-#### 2. Ensure Target Has Python
+#### 4. Ensure Target Has Python
 
 ```bash
 ssh <user>@<server-ip> "sudo apt update && sudo apt install -y python3"
 ```
 
-#### 3. Create Ansible Account
+#### 4. Create Ansible Account
 
 Set the `ANSIBLE_PASSWORD` environment variable and run the playbook using a
 bootstrap user (e.g., `ubuntu`, `root`, or your initial user):
@@ -96,7 +101,7 @@ This creates an `ansible` user with:
 - The password you set in `ANSIBLE_PASSWORD`
 - sudo privileges
 
-#### 4. Install k3s (and fetch kubectl config)
+#### 5. Install k3s (and fetch kubectl config)
 
 ```bash
 ansible-playbook -u ansible playbooks/install_k3s.yml \
@@ -112,7 +117,7 @@ It also disables the following components (since we either want to use different
 - servicelb (load balancer)
 - embedded-registry
 
-#### 5. Verify Connection
+#### 6. Verify Connection
 
 ```bash
 kubectl config use-context homelab
@@ -164,7 +169,51 @@ Find the `lab-root-ca` certificate in Keychain Access, open it, expand the "Trus
 ### Adding DNS Rules
 TODO: Document this.
 
-### Accessing the Platform
+### Platform Applications
+TODO: Finish documenting this section.
+
+#### Gitea
+
+Terraform will create a user named `admin` with a randonly generated password. You can access these credentials like so:
+```bash
+kubectl get secret -n gitea gitea-admin-credentials -o jsonpath={'.data.username'} | base64 -d
+kubectl get secret -n gitea gitea-admin-credentials -o jsonpath={'.data.password'} | base64 -d
+```
+
+#### ArgoCD
+
+Terraform will create a user named `admin` with a randonly generated password. You can access this password like so:
+```bash
+kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath={'.data.password'} | base64 -d
+```
+
+TODO: Document gitea-platform-repo secret.
+
+#### Hashicorp Vault
+
+Vault is set to auto-unseal and will create a secret named `vault-init-credentials` in the `vault` namespace containing the root token and unseal keys:
+```bash
+kubectl get secret -n vault vault-init-credentials -o yaml
+```
+```bash
+apiVersion: v1
+data:
+  root-token: ...
+  unseal-key-1: ...
+  unseal-key-2: ...
+  unseal-key-3: ...
+kind: Secret
+...
+```
+
+You should back this up, if this secret is deleted and you cannot recover the root token and/or unseal keys, you will not be able to unseal Vault and access the data stored within.
+
+You can use the root token to log into the Vault UI:
+```bash
+kubectl get secret -n vault vault-init-credentials -o jsonpath={'.data.root-token'} | base64 -d
+```
+
+### Accessing The Platform
 
 Your IDP foundation is now complete. You can access your services at (or depending on your `config/homelab.yml`):
 

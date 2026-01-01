@@ -12,5 +12,5 @@ variable "namespace" {
 variable "argocd_chart_version" {
   description = "The version of the ArgoCD Helm chart to deploy."
   type        = string
-  default     = "8.0.17"
+  default     = "9.2.3"
 }

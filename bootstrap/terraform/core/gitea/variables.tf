@@ -1,7 +1,7 @@
 variable "gitea_chart_version" {
   description = "The version of the Gitea Helm chart to deploy."
   type        = string
-  default     = "12.1.1"
+  default     = "12.4.0"
 }
 
 variable "hostname" {
