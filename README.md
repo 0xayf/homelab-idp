@@ -174,7 +174,7 @@ TODO: Finish documenting this section.
 
 #### Gitea
 
-Terraform will create a user named `admin` with a randonly generated password. You can access these credentials like so:
+Terraform will create a user named `admin` with a randomly generated password. You can access these credentials like so:
 ```bash
 kubectl get secret -n gitea gitea-admin-credentials -o jsonpath={'.data.username'} | base64 -d
 kubectl get secret -n gitea gitea-admin-credentials -o jsonpath={'.data.password'} | base64 -d
@@ -182,7 +182,7 @@ kubectl get secret -n gitea gitea-admin-credentials -o jsonpath={'.data.password
 
 #### ArgoCD
 
-Terraform will create a user named `admin` with a randonly generated password. You can access this password like so:
+Terraform will create a user named `admin` with a randomly generated password. You can access this password like so:
 ```bash
 kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath={'.data.password'} | base64 -d
 ```
