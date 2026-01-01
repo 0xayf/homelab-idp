@@ -1,0 +1,7 @@
+- name: Delete Account
+  hosts: k3s-server
+  become: true
+  vars:
+    account_name: ansible
+  roles:
+    - role: homelab.ubuntu.delete_account

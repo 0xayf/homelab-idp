@@ -1,0 +1,8 @@
+apiVersion: v2
+name: crossplane
+description: A wrapper chart to deploy the Crossplane control plane.
+version: 0.1.0
+dependencies:
+  - name: crossplane
+    version: "v2.0.2"
+    repository: "https://charts.crossplane.io/stable"

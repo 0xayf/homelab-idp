@@ -1,0 +1,50 @@
+---
+- name: Create group
+  ansible.builtin.group:
+    name: "{{ account_name }}"
+    state: present
+  become: true
+
+- name: Create account
+  ansible.builtin.user:
+    name: "{{ account_name }}"
+    group: "{{ account_name }}"
+    password: "{{ account_password | default(omit) }}"
+    state: present
+    shell: "{{ '/bin/bash' if not (system_account | default(false) | bool) else '/usr/sbin/nologin' }}"
+    create_home: yes
+  become: true
+
+- name: Add public key to authorized_keys
+  ansible.builtin.authorized_key:
+    user: "{{ account_name }}"
+    key: "{{ ssh_public_key }}"
+    state: present
+  when:
+    - not (system_account | default(false) | bool)
+    - ssh_public_key is defined
+  become: true
+
+- name: Add account to sudo group
+  ansible.builtin.user:
+    name: "{{ account_name }}"
+    groups: sudo
+    append: true
+  when:
+    - not (system_account | default(false) | bool)
+    - give_sudo | default(false) | bool
+  become: true
+
+- name: Grant passwordless sudo
+  ansible.builtin.lineinfile:
+    path: "/etc/sudoers.d/{{ account_name }}"
+    create: yes
+    state: present
+    line: "{{ account_name }} ALL=(ALL) NOPASSWD: ALL"
+    owner: root
+    group: root
+    mode: '0440'
+  when:
+    - system_account | default(false) | bool
+    - give_sudo | default(false) | bool
+  become: true

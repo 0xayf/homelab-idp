@@ -1,0 +1,10 @@
+cluster:
+  server_ip: 10.0.0.10
+network:
+  metallb_ip_range: 10.0.0.20-10.0.0.20
+ingress:
+  base_domain: lab
+  prefixes:
+    argocd: cd
+    gitea: git
+    vault: secrets

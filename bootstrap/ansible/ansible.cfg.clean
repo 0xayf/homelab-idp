@@ -1,0 +1,14 @@
+[defaults]
+# Paths are relative to this file's directory - run commands from bootstrap/ansible/
+inventory = inventory/hosts
+collections_path = ./ansible_collections
+
+# Override these via CLI: -u <user> --private-key <path>
+# remote_user = ansible
+# private_key_file = ~/.ssh/homelab/homelab_ansible
+
+[privilege_escalation]
+become = True
+become_method = sudo
+# Uncomment if your user requires password for sudo:
+# become_ask_pass = True

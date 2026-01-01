@@ -1,0 +1,35 @@
+---
+- name: Check if k3s binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+  become: true
+
+- name: Uninstall k3s
+  ansible.builtin.shell: |
+    /usr/local/bin/k3s-uninstall.sh
+  when: k3s_binary.stat.exists
+  become: true
+
+- name: Remove etc/rancher directory
+  ansible.builtin.file:
+    path: /etc/rancher
+    state: absent
+  become: true
+
+- name: Remove /var/lib/rancher directory
+  ansible.builtin.file:
+    path: /var/lib/rancher
+    state: absent
+  become: true
+
+- name: Remove k3s systemd service files
+  ansible.builtin.file:
+    path: /etc/systemd/system/k3s.service
+    state: absent
+  become: true
+
+- name: Reload systemd
+  ansible.builtin.command:
+    cmd: systemctl daemon-reload
+  become: true

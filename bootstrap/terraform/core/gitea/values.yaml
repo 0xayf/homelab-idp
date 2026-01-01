@@ -1,0 +1,20 @@
+gitea:
+  ingress:
+    hostname: ${hostname}
+
+  admin:
+    username: ${username}
+    password: "${password}"
+    email: ${email}
+
+postgresql:
+  enabled: true
+  persistence:
+    enabled: true
+
+postgresql-ha:
+  enabled: false
+
+persistence:
+  enabled: true
+  size: 5Gi

@@ -1,0 +1,42 @@
+---
+- name: Ensure k3s configuration directory exists
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+  become: true
+
+- name: Create k3s configuration file
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: '0640'
+  become: true
+
+- name: Get current k3s version
+  ansible.builtin.command:
+    cmd: /usr/local/bin/k3s --version
+  register: k3s_current_version
+  failed_when: false
+  changed_when: false
+
+- name: Install or update k3s binary
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_install_version }} sh -
+  args:
+    creates: /usr/local/bin/k3s
+  when:
+    - (k3s_install_version | length > 0 and k3s_install_version not in k3s_current_version.stdout) or
+      (k3s_install_version | length == 0 and k3s_current_version.rc != 0)
+  become: true
+
+- name: Ensure k3s service is running
+  ansible.builtin.service:
+    name: k3s
+    state: started
+    enabled: true
+  become: true

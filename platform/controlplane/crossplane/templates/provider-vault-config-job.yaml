@@ -1,0 +1,115 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: provider-vault-config-script
+  namespace: {{ .Release.Namespace }}
+data:
+  run.sh: |
+    #!/bin/sh
+    set -e
+
+    NAMESPACE="{{ .Release.Namespace }}"
+    VAULT_NAMESPACE="vault"
+    PROVIDER_CONFIG_NAME="default"
+
+    log() { echo "==> $(date '+%Y-%m-%d %H:%M:%S') | $@"; }
+
+    log "Installing dependencies..."
+    apk add --no-cache curl jq kubectl > /dev/null
+    log "Dependencies installed."
+
+    log "Waiting for Crossplane Vault ProviderConfig CRD..."
+    until kubectl get crd providerconfigs.vault.upbound.io >/dev/null 2>&1; do
+      sleep 2
+    done
+    log "Found CRD providerconfigs.vault.upbound.io"
+
+    log "Waiting for Vault crossplane-token secret..."
+    until kubectl -n "$VAULT_NAMESPACE" get secret crossplane-token >/dev/null 2>&1; do
+      sleep 2
+    done
+    log "Found Secret vault/crossplane-token"
+
+    if kubectl get providerconfig.vault.upbound.io "$PROVIDER_CONFIG_NAME" >/dev/null 2>&1; then
+      log "ProviderConfig/$PROVIDER_CONFIG_NAME already exists – applying updates if any..."
+    else
+      log "Creating ProviderConfig/$PROVIDER_CONFIG_NAME..."
+    fi
+
+    cat <<EOF | kubectl apply -f -
+    apiVersion: vault.upbound.io/v1beta1
+    kind: ProviderConfig
+    metadata:
+      name: $PROVIDER_CONFIG_NAME
+    spec:
+      address: http://vault.vault.svc.cluster.local:8200
+      credentials:
+        source: Secret
+        secretRef:
+          namespace: $VAULT_NAMESPACE
+          name: crossplane-token
+          key: credentials
+    EOF
+    log "ProviderConfig ensured."
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provider-vault-configurer
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: provider-vault-configurer
+rules:
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: ["vault.upbound.io"]
+    resources: ["providerconfigs"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: provider-vault-configurer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: provider-vault-configurer
+subjects:
+  - kind: ServiceAccount
+    name: provider-vault-configurer
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: provider-vault-config-script-
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  template:
+    spec:
+      serviceAccountName: provider-vault-configurer
+      restartPolicy: OnFailure
+      containers:
+      - name: apply
+        image: alpine:3.22.1
+        command: ["/bin/sh", "/config/run.sh"]
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: provider-vault-config-script
+          defaultMode: 0755

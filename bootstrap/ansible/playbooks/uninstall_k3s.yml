@@ -1,0 +1,5 @@
+- name: Uninstall k3s Server
+  hosts: k3s-server
+  become: true
+  roles:
+    - role: homelab.k3s.uninstall

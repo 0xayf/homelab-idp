@@ -1,0 +1,7 @@
+---
+# defaults file for ./homelab/k3s/roles/base
+k3s_install_version: ""
+disable_flannel: false
+disable_traefik: false
+disable_servicelb: false
+disable_embedded_registry: false

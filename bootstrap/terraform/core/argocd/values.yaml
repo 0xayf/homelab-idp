@@ -1,0 +1,7 @@
+crds:
+  keep: false
+
+server:
+  url: https://${hostname}
+  extraArgs:
+    - --insecure

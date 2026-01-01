@@ -1,0 +1,3 @@
+---
+local_kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/config"
+cluster_name: "homelab"

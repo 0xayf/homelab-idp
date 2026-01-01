@@ -1,0 +1,19 @@
+---
+- name: Delete sudoers file if present
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/{{ account_name }}"
+    state: absent
+  become: true
+
+- name: Delete account
+  ansible.builtin.user:
+    name: "{{ account_name }}"
+    state: absent
+    remove: true
+  become: true
+
+- name: Delete group
+  ansible.builtin.group:
+    name: "{{ account_name }}"
+    state: absent
+  become: true

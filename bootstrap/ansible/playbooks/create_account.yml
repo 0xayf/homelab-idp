@@ -1,0 +1,11 @@
+- name: Create Ansible Account
+  hosts: k3s-server
+  become: true
+  vars:
+    system_account: false
+    account_name: ansible
+    account_password: "{{ lookup('env', 'ANSIBLE_PASSWORD') }}"
+    ssh_public_key: "{{ lookup('file', '~/.ssh/homelab/homelab_ansible.pub') }}"
+    give_sudo: true
+  roles:
+    - role: homelab.ubuntu.create_account

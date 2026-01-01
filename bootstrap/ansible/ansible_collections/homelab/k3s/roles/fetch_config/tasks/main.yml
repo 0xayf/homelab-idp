@@ -1,0 +1,53 @@
+---
+- name: Read remote k3s.yaml
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  register: remote_kubeconfig
+
+- name: Prepare local kubeconfig directory
+  ansible.builtin.file:
+    path: "{{ local_kubeconfig | dirname }}"
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+
+- name: Process and save temporary kubeconfig
+  ansible.builtin.copy:
+    content: "{{ remote_kubeconfig.content | b64decode | replace('127.0.0.1', inventory_hostname) | replace('localhost', inventory_hostname) | replace('default', cluster_name) }}"
+    dest: "/tmp/k3s_temp.yaml"
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+
+- name: Merge into existing kubeconfig
+  ansible.builtin.shell: |
+    if [ -f "{{ local_kubeconfig }}" ]; then
+      KUBECONFIG="/tmp/k3s_temp.yaml:{{ local_kubeconfig }}" kubectl config view --flatten > "{{ local_kubeconfig }}.new"
+      mv "{{ local_kubeconfig }}.new" "{{ local_kubeconfig }}"
+    else
+      cp "/tmp/k3s_temp.yaml" "{{ local_kubeconfig }}"
+    fi
+    rm "/tmp/k3s_temp.yaml"
+  delegate_to: localhost
+  become: false
+  changed_when: true
+
+- name: Switch context to {{ cluster_name }}
+  ansible.builtin.command: "kubectl config use-context {{ cluster_name }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Verify connection
+  ansible.builtin.command: "kubectl get nodes"
+  delegate_to: localhost
+  become: false
+  register: nodes_output
+  changed_when: false
+
+- name: Display cluster status
+  ansible.builtin.debug:
+    msg: "{{ nodes_output.stdout_lines }}"
+  delegate_to: localhost
+  become: false
