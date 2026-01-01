@@ -144,7 +144,7 @@ ansible-playbook -u ansible playbooks/install_k3s.yml \
 
 This installs k3s and **automatically merges the kubeconfig to your local machine** (renaming the context to `homelab`). 
 
-It also disables the following components (for use with Cilium):
+It also disables the following components (since we either want to use different tools, and/or manage them via ArgoCD):
 - flannel (CNI)
 - traefik (ingress)
 - servicelb (load balancer)
