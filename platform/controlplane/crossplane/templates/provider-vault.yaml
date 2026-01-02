@@ -52,27 +52,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
     argocd.argoproj.io/sync-wave: "1"
-    argocd.argoproj.io/health.lua: |
-      hs = {}
-      hs.status = "Progressing"
-      hs.message = "Waiting for Installed and Healthy conditions"
-      local installed = false
-      local healthy = false
-      if obj.status and obj.status.conditions then
-        for _, c in ipairs(obj.status.conditions) do
-          if c.type == "Installed" then installed = (c.status == "True") end
-          if c.type == "Healthy" then healthy = (c.status == "True") end
-        end
-        if installed and healthy then
-          hs.status = "Healthy"
-          hs.message = "Provider installed and healthy"
-        else
-          hs.status = "Progressing"
-          hs.message = "installed=" .. tostring(installed) .. ", healthy=" .. tostring(healthy)
-        end
-      end
-      return hs
 spec:
-  package: xpkg.upbound.io/upbound/provider-vault:v2.2.1
+  package: xpkg.upbound.io/upbound/provider-vault:v3.0.3
   runtimeConfigRef:
     name: provider-vault-runtime-config
