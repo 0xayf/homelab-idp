@@ -1,1 +1,3 @@
-cloudnative-pg: {}
+cloudnative-pg:
+  crds:
+    create: true
