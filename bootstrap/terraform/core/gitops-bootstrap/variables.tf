@@ -13,13 +13,20 @@ variable "gitea_namespace" {
   type        = string
 }
 
-variable "platform_repo_name" {
-  description = "The name of the platform repository to create in Gitea."
+variable "platform_apps_repo_name" {
+  description = "The name of the Gitea repository for platform apps (ArgoCD-managed)."
   type        = string
+  default     = "platform-apps"
+}
+
+variable "platform_core_repo_name" {
+  description = "The name of the Gitea repository for platform core."
+  type        = string
+  default     = "platform-core"
 }
 
 variable "platform_org_name" {
-  description = "The name of the Gitea organization to create for the platform."
+  description = "The name of the Gitea organization for the platform."
   type        = string
 }
 
@@ -35,5 +42,15 @@ variable "vault_hostname" {
 
 variable "metallb_ip_range" {
   description = "MetalLB IP address pool range."
+  type        = string
+}
+
+variable "platform_apps_path" {
+  description = "Absolute path to the platform apps folder"
+  type        = string
+}
+
+variable "platform_core_path" {
+  description = "Absolute path to the platform core (bootstrap) folder"
   type        = string
 }

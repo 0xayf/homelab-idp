@@ -20,7 +20,7 @@ resource "kubernetes_job_v1" "gitops_bootstrap" {
         container {
           name    = "bootstrap"
           image   = "alpine/k8s:1.30.14"
-          command = ["/bin/sh", "-c", "/scripts/1-create-org-user.sh && /scripts/2-create-repo.sh && /scripts/3-push-config.sh && /scripts/4-setup-argocd.sh"]
+          command = ["/bin/sh", "-c", "/scripts/1-create-org-argocd-bot.sh && /scripts/2-create-repos.sh && /scripts/3-push-repos.sh && /scripts/4-argocd-repositories-secret.sh"]
 
           env {
             name  = "GITEA_ADMIN_USER"
@@ -36,8 +36,12 @@ resource "kubernetes_job_v1" "gitops_bootstrap" {
             }
           }
           env {
-            name  = "PLATFORM_REPO_NAME"
-            value = var.platform_repo_name
+            name  = "PLATFORM_APPS_REPO_NAME"
+            value = var.platform_apps_repo_name
+          }
+          env {
+            name  = "PLATFORM_CORE_REPO_NAME"
+            value = var.platform_core_repo_name
           }
           env {
             name  = "PLATFORM_ORG_NAME"
@@ -61,6 +65,12 @@ resource "kubernetes_job_v1" "gitops_bootstrap" {
             mount_path = "/scripts"
             read_only  = true
           }
+
+          volume_mount {
+            name       = "archives"
+            mount_path = "/archives"
+            read_only  = true
+          }
         }
         volume {
           name = "scripts"
@@ -69,7 +79,23 @@ resource "kubernetes_job_v1" "gitops_bootstrap" {
             default_mode = "0755"
           }
         }
+        volume {
+          name = "archives"
+          projected {
+            sources {
+              config_map {
+                name = kubernetes_config_map_v1.platform_apps_archive.metadata[0].name
+              }
+            }
+            sources {
+              config_map {
+                name = kubernetes_config_map_v1.platform_core_archive.metadata[0].name
+              }
+            }
+          }
+        }
       }
     }
   }
+
 }

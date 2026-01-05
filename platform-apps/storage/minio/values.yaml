@@ -1,0 +1,11 @@
+minio:
+  image:
+    repository: bitnamilegacy/minio
+  console:
+    image:
+      repository: bitnamilegacy/minio-object-browser
+  defaultBuckets: "terraform-state"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "local-path"

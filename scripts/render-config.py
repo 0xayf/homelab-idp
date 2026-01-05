@@ -77,6 +77,15 @@ def main() -> int:
                 f"base_domain = \"{base_domain}\"",
                 f"argocd_hostname = \"{argocd_hostname}\"",
                 f"gitea_hostname = \"{gitea_hostname}\"",
+                "",
+            ]
+        )
+    )
+
+    bootstrap_tfvars_path = repo_root / "bootstrap/terraform/bootstrap.auto.tfvars"
+    bootstrap_tfvars_path.write_text(
+        "\n".join(
+            [
                 f"vault_hostname = \"{vault_hostname}\"",
                 f"metallb_ip_range = \"{metallb_ip_range}\"",
                 "",
@@ -87,6 +96,7 @@ def main() -> int:
     print("Rendered:")
     print(f"- {inventory_path}")
     print(f"- {tfvars_path}")
+    print(f"- {bootstrap_tfvars_path}")
     return 0
 
 

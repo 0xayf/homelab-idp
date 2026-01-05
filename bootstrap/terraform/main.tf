@@ -20,20 +20,14 @@ module "argocd" {
   depends_on = [module.cilium]
 }
 
-module "gitops_bootstrap" {
-  source = "./core/gitops-bootstrap"
+module "argocd_appset" {
+  source = "./core/argocd-appset"
 
-  gitea_admin_user        = module.gitea.admin_username
-  gitea_admin_secret_name = module.gitea.admin_password_secret_name
-  gitea_namespace         = module.gitea.namespace
-  platform_org_name       = var.platform_org_name
-  platform_repo_name      = var.platform_repo_name
   argocd_namespace        = module.argocd.namespace
-  vault_hostname          = var.vault_hostname
-  metallb_ip_range        = var.metallb_ip_range
+  platform_org_name       = var.platform_org_name
+  platform_apps_repo_name = var.platform_apps_repo_name
+  kubeconfig_path         = var.kubeconfig_path
+  kubeconfig_context      = var.kubeconfig_context
 
-  depends_on = [
-    module.gitea,
-    module.argocd
-  ]
+  depends_on = [module.argocd]
 }

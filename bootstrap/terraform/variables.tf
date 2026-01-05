@@ -1,5 +1,3 @@
-
-
 variable "kubeconfig_path" {
   description = "Path to the kubeconfig file"
   type        = string
@@ -27,23 +25,14 @@ variable "gitea_hostname" {
   type        = string
 }
 
-variable "vault_hostname" {
-  description = "The fully qualified domain name for Vault."
-  type        = string
-}
-
-variable "metallb_ip_range" {
-  description = "MetalLB IP address pool range."
-  type        = string
-}
-
 variable "platform_org_name" {
-  description = "The name of the Gitea organisation for the platform repo."
+  description = "The name of the Gitea organisation for the platform repos."
   type        = string
   default     = "homelab"
 }
-variable "platform_repo_name" {
-  description = "The name of the Gitea repository for the platform config."
+
+variable "platform_apps_repo_name" {
+  description = "The name of the Gitea repository for platform apps (ArgoCD-managed)."
   type        = string
-  default     = "platform"
+  default     = "platform-apps"
 }

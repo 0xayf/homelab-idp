@@ -16,6 +16,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.7.2"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2.4"
+    }
   }
   required_version = ">= 1.5.0"
 }
@@ -32,7 +36,7 @@ provider "kubectl" {
 
 provider "helm" {
   kubernetes = {
-    config_path    = var.kubeconfig_path
+    config_path    = pathexpand(var.kubeconfig_path)
     config_context = var.kubeconfig_context
   }
 }

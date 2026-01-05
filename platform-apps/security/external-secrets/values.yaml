@@ -1,0 +1,5 @@
+external-secrets:
+  installCRDs: true
+  crds:
+    annotations:
+      argocd.argoproj.io/sync-options: ServerSideApply=true

@@ -4,6 +4,7 @@
 ### Terraform ###
 # Local .terraform directories
 **/.terraform/*
+**/.terraform.lock.hcl
 
 # .tfstate files
 *.tfstate
@@ -43,3 +44,4 @@ AGENTS.md
 # Local homelab config
 config/homelab.yml
 bootstrap/ansible/inventory/hosts
+bootstrap/terraform/core/gitops-bootstrap/.generated
