@@ -40,6 +40,16 @@ variable "vault_hostname" {
   type        = string
 }
 
+variable "minio_hostname" {
+  description = "The fully qualified domain name for MinIO Console."
+  type        = string
+}
+
+variable "minio_api_hostname" {
+  description = "The fully qualified domain name for the MinIO API."
+  type        = string
+}
+
 variable "metallb_ip_range" {
   description = "MetalLB IP address pool range."
   type        = string

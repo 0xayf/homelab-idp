@@ -1,6 +1,6 @@
 <p align="center">
   <img src="assets/logo.png" alt="Homelab IDP" width="400">
-  <br><br>
+  <br>
   <em>A self-managing internal developer platform for your homelab.</em>
 </p>
 
@@ -62,9 +62,9 @@ After bootstrap completes, you have a self-managing platform where:
 │                                                       │                     │
 │  ┌────────────────────────────────────────────────────│───────────────────┐ │
 │  │                    ARGOCD-MANAGED (apps)           v                   │ │
-│  │  ┌──────────────┐  ┌───────────────┐  ┌───────┐   ┌──────────────────┐ │ │
-│  │  │ cert-manager │  │ ingress-nginx │  │ vault │   │ external-secrets │ │ │
-│  │  └──────────────┘  └───────────────┘  └───────┘   └──────────────────┘ │ │
+│  │  ┌──────────────┐  ┌───────────────┐  ┌─────────┐ ┌──────────────────┐ │ │
+│  │  │ cert-manager │  │ ingress-nginx │  │ metallb │ │ external-secrets │ │ │
+│  │  └──────────────┘  └───────────────┘  └─────────┘ └──────────────────┘ │ │
 │  │  ┌─────────┐  ┌──────────────────┐  ┌──────────────┐  ┌─────────┐      │ │
 │  │  │  vault  │  │  cloudnative-pg  │  │  crossplane  │  │  minio  │      │ │
 │  │  └─────────┘  └──────────────────┘  └──────────────┘  └─────────┘      │ │
@@ -219,7 +219,7 @@ kubectl get applications -n argocd
 
 ```yaml
 cluster:
-  server_ip: 10.0.0.10                   # Target server IP
+  server_ip: 10.0.0.10           # Target server IP
 
 network:
   metallb_ip_range: 10.0.0.20-10.0.0.30  # LoadBalancer IP pool
@@ -232,6 +232,74 @@ ingress:
     vault: secrets               # secrets.lab
 ```
 
+## Post-Bootstrap Operations
+
+### Configure DNS
+
+Platform services are exposed via ingress using hostnames defined in `config/homelab.yml`. Your local DNS must resolve these hostnames to the MetalLB LoadBalancer IP (the first IP in `network.metallb_ip_range`).
+
+Based on the default configuration, create DNS entries for:
+
+| Hostname | Service | Source |
+|----------|---------|--------|
+| `cd.lab` | ArgoCD | `ingress.prefixes.argocd` |
+| `git.lab` | Gitea | `ingress.prefixes.gitea` |
+| `secrets.lab` | Vault | `ingress.prefixes.vault` |
+| `s3.lab` | MinIO S3 API | MinIO chart |
+| `storage.lab` | MinIO Console | MinIO chart |
+
+All entries should point to your LoadBalancer IP (e.g., `10.0.0.20`).
+
+**OPNsense/Unbound**: Configure in **Services > Unbound DNS > Host Overrides**.
+
+**Pi-hole**: Add entries in **Local DNS > DNS Records**.
+
+**Other DNS**: Add A records in your DNS server or `/etc/hosts` for testing.
+
+After adding entries, flush your local DNS cache:
+
+```bash
+# macOS
+sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder
+
+# Linux
+sudo systemd-resolve --flush-caches
+
+# Windows
+ipconfig /flushdns
+```
+
+### Trust the Cluster CA
+
+Export and trust the root CA for browser access:
+
+```bash
+./scripts/get-ca-cert.sh
+# Follow instructions to add to your system trust store
+```
+
+### Migrate Terraform State to MinIO
+
+After bootstrap, Terraform state exists as a local file. For collaboration, state locking, and GitOps compatibility, migrate it to MinIO (S3-compatible storage) running in your cluster.
+
+This migration excludes bootstrap-only resources (`module.gitops_bootstrap`) that are no longer needed.
+
+See [docs/terraform-state-migration.md](docs/terraform-state-migration.md) for the complete migration guide.
+
+### Adding a New Platform App
+
+1. Clone `homelab/platform-apps` from Gitea
+2. Create a new chart in `platform-apps/<category>/<app-name>/`
+3. Push to `homelab/platform-apps` in Gitea
+4. ArgoCD automatically detects and deploys it
+
+### Modifying Core Infrastructure
+
+1. Clone `homelab/platform-core` from Gitea
+2. Make Terraform changes
+3. Run `terraform plan` and `terraform apply`
+4. Push changes back to Gitea
+
 ## Credentials
 
 ```bash
@@ -241,6 +309,10 @@ kubectl get secret -n gitea gitea-admin-credentials -o jsonpath='{.data.password
 
 # ArgoCD admin
 kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+
+# MinIO API + Console
+kubectl get secret -n minio minio -o jsonpath='{.data.root-user}' | base64 -d
+kubectl get secret -n minio minio -o jsonpath='{.data.root-password}' | base64 -d
 ```
 
 ### Vault Credentials
@@ -256,30 +328,6 @@ The secret contains:
 - `unseal-key-1`, `unseal-key-2`, `unseal-key-3` - Shamir unseal keys
 
 > **Warning**: Back up this secret immediately. If `vault-init-credentials` is deleted and you cannot recover the root token and unseal keys, you will permanently lose access to all data stored in Vault.
-
-## Post-Bootstrap Operations
-
-### Adding a New Platform App
-
-1. Create a new chart in `platform-apps/<category>/<app-name>/`
-2. Push to `homelab/platform-apps` in Gitea
-3. ArgoCD automatically detects and deploys it
-
-### Modifying Core Infrastructure
-
-1. Clone `homelab/platform-core` from Gitea
-2. Make Terraform changes
-3. Run `terraform plan` and `terraform apply`
-4. Push changes back to Gitea
-
-### Trust the Cluster CA
-
-Export and trust the root CA for browser access:
-
-```bash
-./scripts/get-ca-cert.sh
-# Follow instructions to add to your system trust store
-```
 
 ## Troubleshooting
 

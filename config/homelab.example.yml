@@ -8,3 +8,5 @@ ingress:
     argocd: cd
     gitea: git
     vault: secrets
+    minio: storage
+    minio_api: s3

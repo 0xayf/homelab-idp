@@ -15,7 +15,6 @@ data "archive_file" "platform_core" {
     "terraform.tfstate",
     "terraform.tfstate.backup",
     "*.tfstate*",
-    "ansible_collections",
     "core/gitops-bootstrap",
     "bootstrap.auto.tfvars",
     "bootstrap.tf",

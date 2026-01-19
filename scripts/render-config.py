@@ -8,7 +8,7 @@ from pathlib import Path
 try:
     import yaml
 except ImportError:
-    print("PyYAML is required. Install with: python3 -m pip install pyyaml", file=sys.stderr)
+    print("PyYAML is required.", file=sys.stderr)
     sys.exit(1)
 
 
@@ -60,10 +60,14 @@ def main() -> int:
     argocd_prefix = get_required(config, ["ingress", "prefixes", "argocd"])
     gitea_prefix = get_required(config, ["ingress", "prefixes", "gitea"])
     vault_prefix = get_required(config, ["ingress", "prefixes", "vault"])
+    minio_prefix = get_required(config, ["ingress", "prefixes", "minio"])
+    minio_api_prefix = get_required(config, ["ingress", "prefixes", "minio_api"])
 
     argocd_hostname = join_hostname(argocd_prefix, base_domain)
     gitea_hostname = join_hostname(gitea_prefix, base_domain)
     vault_hostname = join_hostname(vault_prefix, base_domain)
+    minio_hostname = join_hostname(minio_prefix, base_domain)
+    minio_api_hostname = join_hostname(minio_api_prefix, base_domain)
 
     inventory_path = repo_root / "bootstrap/ansible/inventory/hosts"
     inventory_path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,6 +81,7 @@ def main() -> int:
                 f"base_domain = \"{base_domain}\"",
                 f"argocd_hostname = \"{argocd_hostname}\"",
                 f"gitea_hostname = \"{gitea_hostname}\"",
+                f"minio_api_hostname = \"{minio_api_hostname}\"",
                 "",
             ]
         )
@@ -87,6 +92,7 @@ def main() -> int:
         "\n".join(
             [
                 f"vault_hostname = \"{vault_hostname}\"",
+                f"minio_hostname = \"{minio_hostname}\"",
                 f"metallb_ip_range = \"{metallb_ip_range}\"",
                 "",
             ]

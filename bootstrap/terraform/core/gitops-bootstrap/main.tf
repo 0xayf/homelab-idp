@@ -59,6 +59,14 @@ resource "kubernetes_job_v1" "gitops_bootstrap" {
             name  = "METALLB_IP_RANGE"
             value = var.metallb_ip_range
           }
+          env {
+            name  = "MINIO_HOSTNAME"
+            value = var.minio_hostname
+          }
+          env {
+            name  = "MINIO_API_HOSTNAME"
+            value = var.minio_api_hostname
+          }
 
           volume_mount {
             name       = "scripts"

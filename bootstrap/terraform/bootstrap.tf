@@ -9,6 +9,8 @@ module "gitops_bootstrap" {
   platform_core_repo_name = var.platform_core_repo_name
   argocd_namespace        = module.argocd.namespace
   vault_hostname          = var.vault_hostname
+  minio_hostname          = var.minio_hostname
+  minio_api_hostname      = var.minio_api_hostname
   metallb_ip_range        = var.metallb_ip_range
   platform_core_path      = abspath("${path.module}")
   platform_apps_path      = abspath("${path.module}/../../platform-apps")

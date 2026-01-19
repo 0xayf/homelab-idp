@@ -25,6 +25,11 @@ variable "gitea_hostname" {
   type        = string
 }
 
+variable "minio_api_hostname" {
+  description = "The fully qualified domain name for the MinIO API."
+  type        = string
+}
+
 variable "platform_org_name" {
   description = "The name of the Gitea organisation for the platform repos."
   type        = string

@@ -4,8 +4,28 @@ minio:
   console:
     image:
       repository: bitnamilegacy/minio-object-browser
+    ingress:
+      enabled: true
+      hostname: __MINIO_HOSTNAME__
+      ingressClassName: nginx
+      path: /
+      pathType: Prefix
+      annotations:
+        cert-manager.io/cluster-issuer: "lab-ca-issuer"
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/hsts: "true"
+      tls: true
   defaultBuckets: "terraform-state"
   persistence:
     enabled: true
     size: 10Gi
     storageClass: "local-path"
+  ingress:
+    enabled: true
+    hostname: __MINIO_API_HOSTNAME__
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: "lab-ca-issuer"
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/hsts: "true"
+    tls: true

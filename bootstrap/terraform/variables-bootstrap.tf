@@ -8,6 +8,11 @@ variable "metallb_ip_range" {
   type        = string
 }
 
+variable "minio_hostname" {
+  description = "The fully qualified domain name for MinIO Console."
+  type        = string
+}
+
 variable "platform_core_repo_name" {
   description = "The name of the Gitea repository for platform core (terraform-managed)."
   type        = string

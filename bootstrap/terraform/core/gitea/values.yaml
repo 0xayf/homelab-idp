@@ -1,6 +1,9 @@
 gitea:
-  ingress:
-    hostname: ${hostname}
+  config:
+    server:
+      DOMAIN: ${hostname}
+      SSH_DOMAIN: ${hostname}
+      ROOT_URL: https://${hostname}/
 
   admin:
     username: ${username}
