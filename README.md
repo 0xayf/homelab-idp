@@ -245,8 +245,8 @@ Based on the default configuration, create DNS entries for:
 | `cd.lab` | ArgoCD | `ingress.prefixes.argocd` |
 | `git.lab` | Gitea | `ingress.prefixes.gitea` |
 | `secrets.lab` | Vault | `ingress.prefixes.vault` |
-| `s3.lab` | MinIO S3 API | MinIO chart |
-| `storage.lab` | MinIO Console | MinIO chart |
+| `storage.lab` | MinIO Console | `ingress.prefixes.minio` |
+| `s3.lab` | MinIO API | `ingress.prefixes.minio_api` |
 
 All entries should point to your LoadBalancer IP (e.g., `10.0.0.20`).
 
