@@ -20,14 +20,21 @@ module "argocd" {
   depends_on = [module.cilium]
 }
 
-module "argocd_appset" {
-  source = "./core/argocd-appset"
+module "bootstrap" {
+  source = "./core/bootstrap"
 
-  argocd_namespace        = module.argocd.namespace
-  platform_org_name       = var.platform_org_name
-  platform_apps_repo_name = var.platform_apps_repo_name
   kubeconfig_path         = var.kubeconfig_path
   kubeconfig_context      = var.kubeconfig_context
+  gitea_admin_user        = module.gitea.admin_username
+  gitea_admin_password    = module.gitea.admin_password
+  gitea_namespace         = module.gitea.namespace
+  platform_org_name       = var.platform_org_name
+  platform_core_repo_name = var.platform_core_repo_name
+  platform_core_path      = abspath("${path.module}/../../platform-core")
+  argocd_namespace        = module.argocd.namespace
 
-  depends_on = [module.argocd]
+  depends_on = [
+    module.gitea,
+    module.argocd
+  ]
 }

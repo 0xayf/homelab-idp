@@ -1,3 +1,0 @@
-metallb:
-  ipAddressPool:
-    ipRange: __METALLB_IP_RANGE__

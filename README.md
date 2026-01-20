@@ -9,132 +9,96 @@
 This repository bootstraps an IDP and then hands ongoing management to GitOps workflows:
 
 - **Ansible** provisions a single-node k3s cluster on your target server
-- **Terraform** deploys core platform services and runs a one-time bootstrap job
-- **Bootstrap job** creates Gitea repos, pushes platform configs, and wires ArgoCD to Gitea
-- **ArgoCD** takes over and manages platform applications via GitOps
+- **Terraform** deploys core platform services and runs a one-time bootstrap script
+- **Bootstrap script** creates a Gitea repo, pushes Helm charts, and wires ArgoCD to Gitea
+- **ArgoCD** takes over and manages **all** platform applications (including Cilium, Gitea, and ArgoCD itself) via GitOps
 
-After bootstrap completes, you have a self-managing platform where:
-- Core infrastructure (Cilium, Gitea, ArgoCD) is managed via Terraform in Gitea
-- Platform applications are managed via ArgoCD pulling Helm charts from Gitea
+After bootstrap completes you have a fully self-managing platform. This repository is never used again — all ongoing changes are made through `platform-core` in Gitea.
 
 ## Architecture
 
 ### Bootstrap Flow
 
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                              LOCAL MACHINE                                 │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  ┌──────────────┐      ┌──────────────┐      ┌──────────────────────────┐  │
-│  │  1. Config   │      │  2. Ansible  │      │      3. Terraform        │  │
-│  │              │      │              │      │                          │  │
-│  │ homelab.yml  │─────>│  Provision   │─────>│  Deploy core services    │  │
-│  │      +       │      │ k3s cluster  │      │  + Run bootstrap job     │  │
-│  │   render-    │      │              │      │                          │  │
-│  │  config.py   │      └──────────────┘      └──────────────────────────┘  │
-│  └──────────────┘              │                          │                │
-│                                │                          │                │
-└────────────────────────────────│──────────────────────────│────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                LOCAL MACHINE                                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────┐      ┌──────────────┐      ┌────────────────────────────┐  │
+│  │  1. Config   │      │  2. Ansible  │      │       3. Terraform         │  │
+│  │              │      │              │      │                            │  │
+│  │ homelab.yml  │─────>│  Provision   │─────>│  Deploy Cilium, Gitea,     │  │
+│  │      +       │      │ k3s cluster  │      │  ArgoCD via Helm           │  │
+│  │   render-    │      │              │      │                            │  │
+│  │  config.py   │      └──────────────┘      │  Run bootstrap.sh via      │  │
+│  └──────────────┘              │             │  local-exec (port-forward  │  │
+│         │                      │             │  to Gitea on localhost)    │  │
+│         │                      │             └────────────────────────────┘  │
+│         │                      │                          │                  │
+│         v                      │                          │                  │
+│  Patches platform-core         │                          │                  │
+│  values.yaml files with        │                          │                  │
+│  hostnames and IPs             │                          │                  │
+│                                │                          │                  │
+└────────────────────────────────│──────────────────────────│──────────────────┘
                                  │                          │
                                  v                          v
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              K3S CLUSTER                                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                    TERRAFORM-MANAGED (core)                            │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────────────────┐ │ │
-│  │  │  Cilium  │  │  Gitea   │  │  ArgoCD  │  │  ArgoCD ApplicationSet  │ │ │
-│  │  │   (CNI)  │  │  (Git)   │  │   (CD)   │  │ (watches platform-apps) │ │ │
-│  │  └──────────┘  └──────────┘  └──────────┘  └─────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                     │                                       │
-│  ┌──────────────────────────────────│─────────────────────────────────────┐ │
-│  │         BOOTSTRAP JOB            │                                     │ │
-│  │  ┌────────────────────────────┐  │                                     │ │
-│  │  │  1. Create Gitea org/repos │  │                                     │ │
-│  │  │  2. Push platform-core     │<─┘                                     │ │
-│  │  │  3. Push platform-apps     │────────────────────┐                   │ │
-│  │  │  4. Wire ArgoCD to Gitea   │                    │                   │ │
-│  │  └────────────────────────────┘                    │                   │ │
-│  └────────────────────────────────────────────────────│───────────────────┘ │
-│                                                       │                     │
-│  ┌────────────────────────────────────────────────────│───────────────────┐ │
-│  │                    ARGOCD-MANAGED (apps)           v                   │ │
-│  │  ┌──────────────┐  ┌───────────────┐  ┌─────────┐ ┌──────────────────┐ │ │
-│  │  │ cert-manager │  │ ingress-nginx │  │ metallb │ │ external-secrets │ │ │
-│  │  └──────────────┘  └───────────────┘  └─────────┘ └──────────────────┘ │ │
-│  │  ┌─────────┐  ┌──────────────────┐  ┌──────────────┐  ┌─────────┐      │ │
-│  │  │  vault  │  │  cloudnative-pg  │  │  crossplane  │  │  minio  │      │ │
-│  │  └─────────┘  └──────────────────┘  └──────────────┘  └─────────┘      │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                K3S CLUSTER                                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │                 TERRAFORM DEPLOYS (Helm releases)                      │  │
+│  │     ┌──────────┐             ┌──────────┐             ┌──────────┐     │  │
+│  │     │  Cilium  │             │  Gitea   │             │  ArgoCD  │     │  │
+│  │     │   (CNI)  │             │  (Git)   │             │   (CD)   │     │  │
+│  │     └──────────┘             └──────────┘             └──────────┘     │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                     │                                        │
+│  ┌──────────────────────────────────│─────────────────────────────────────┐  │
+│  │         BOOTSTRAP SCRIPT         │     (runs on local machine via      │  │
+│  │                                  │      kubectl port-forward)          │  │
+│  │  1. Create Gitea org + bot user  │                                     │  │
+│  │  2. Create platform-core repo   <┘                                     │  │
+│  │  3. Push Helm charts to Gitea                                          │  │
+│  │  4. Create argocd-repositories secret                                  │  │
+│  │  5. Apply ArgoCD ApplicationSet                                        │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                     │                                        │
+│                                     v                                        │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │               ARGOCD-MANAGED (all apps, including core)                │  │
+│  │                                                                        │  │
+│  │  core/               controlplane/                security/            │  │
+│  │  ├─ argocd           ├─ crossplane                ├─ vault             │  │
+│  │  ├─ gitea            └─ crossplane-composition    └─ external-secrets  │  │
+│  │  ├─ cilium                                                             │  │
+│  │  ├─ cert-manager     storage/                                          │  │
+│  │  ├─ ingress-nginx    ├─ minio                                          │  │
+│  │  └─ metallb          └─ cloudnative-pg                                 │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Post-Bootstrap Ownership
 
-After bootstrap completes, two repositories exist in Gitea under `homelab/`:
+After bootstrap completes:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         GITEA (homelab org)                                 │
-├───────────────────────────────────┬─────────────────────────────────────────┤
-│     homelab/platform-core         │        homelab/platform-apps            │
-├───────────────────────────────────┼─────────────────────────────────────────┤
-│                                   │                                         │
-│  Terraform code for core infra    │  Helm charts for platform apps          │
-│                                   │                                         │
-│  ├── main.tf                      │  ├── core/                              │
-│  ├── providers.tf                 │  │   ├── cert-manager/                  │
-│  ├── variables.tf                 │  │   ├── ingress-nginx/                 │
-│  ├── terraform.tfvars             │  │   └── metallb/                       │
-│  └── core/                        │  ├── security/                          │
-│      ├── cilium/                  │  │   ├── external-secrets/              │
-│      ├── gitea/                   │  │   └── vault/                         │
-│      ├── argocd/                  │  ├── storage/                           │
-│      └── argocd-appset/           │  │   ├── cloudnative-pg/                │
-│                                   │  │   └── minio/                         │
-│  Manages:                         │  └── controlplane/                      │
-│  - Cilium CNI                     │      └── crossplane/                    │
-│  - Gitea git server               │                                         │
-│  - ArgoCD + ApplicationSet        │  Managed by: ArgoCD (GitOps)            │
-│                                   │  Each Chart.yaml = one ArgoCD App       │
-│  Managed by: Terraform            │                                         │
-│  (run from this repo or cluster)  │                                         │
-│                                   │                                         │
-├───────────────────────────────────┴─────────────────────────────────────────┤
-│  NOTE: Bootstrap-only files are EXCLUDED from platform-core:                │
-│  - bootstrap.tf, variables-bootstrap.tf, bootstrap.auto.tfvars              │
-│  - core/gitops-bootstrap/                                                   │
-│  These only run once and are not needed post-provisioning.                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- `homelab/platform-core` in Gitea is the single source of truth for the platform
+- ArgoCD manages **all** platform components from that repo, including Cilium, Gitea, and ArgoCD itself
+- Every `Chart.yaml` in `platform-core` is discovered by the ApplicationSet and reconciled continuously
+- Terraform in this repo is bootstrap-only and is not used for day-2 operations
 
-### Ownership Summary
-
-| Component | Managed By | Repository |
-|-----------|------------|------------|
-| Cilium (CNI) | Terraform | `homelab/platform-core` |
-| Gitea | Terraform | `homelab/platform-core` |
-| ArgoCD | Terraform | `homelab/platform-core` |
-| ArgoCD ApplicationSet | Terraform | `homelab/platform-core` |
-| cert-manager | ArgoCD | `homelab/platform-apps` |
-| ingress-nginx | ArgoCD | `homelab/platform-apps` |
-| metallb | ArgoCD | `homelab/platform-apps` |
-| external-secrets | ArgoCD | `homelab/platform-apps` |
-| vault | ArgoCD | `homelab/platform-apps` |
-| cloudnative-pg | ArgoCD | `homelab/platform-apps` |
-| minio | ArgoCD | `homelab/platform-apps` |
-| crossplane | ArgoCD | `homelab/platform-apps` |
+For details on how the bootstrap module works, see [docs/terraform-bootstrap-handoff.md](docs/terraform-bootstrap-handoff.md).
 
 ## Prerequisites
 
 - Python 3 with PyYAML (`pip install pyyaml`)
 - Ansible (`pip install ansible`)
-- Terraform
+- Terraform (runs the bootstrap `local-exec` script)
 - kubectl
+- jq, curl, git, sed (required by bootstrap `local-exec`)
 - A target server running Ubuntu with SSH access
 
 ## Quick Start
@@ -148,20 +112,20 @@ cp config/homelab.example.yml config/homelab.yml
 # Edit config/homelab.yml with your values
 ```
 
-Generate Ansible inventory and Terraform variables:
+Generate Ansible inventory, Terraform variables, and patch platform-core Helm values:
 
 ```bash
 python3 scripts/render-config.py
 ```
 
-This creates:
-- `bootstrap/ansible/inventory/hosts`
-- `bootstrap/terraform/terraform.tfvars`
-- `bootstrap/terraform/bootstrap.auto.tfvars`
+This creates/patches:
+- `bootstrap/ansible/inventory/hosts` — Ansible inventory
+- `bootstrap/terraform/terraform.tfvars` — Terraform variables
+- `platform-core/**/values.yaml` — Replaces `__PLACEHOLDER__` strings with values from your config
 
 ### 2. Provision k3s Cluster
 
-See [bootstrap/ansible/README.md](bootstrap/ansible/README.md) for detailed Ansible usage.
+See [docs/ansible-k3s-provisioning.md](docs/ansible-k3s-provisioning.md) for detailed Ansible usage.
 
 **Quick version:**
 
@@ -196,15 +160,13 @@ terraform plan
 terraform apply
 ```
 
-This deploys:
-1. Cilium (CNI)
-2. Gitea (git server)
-3. ArgoCD (continuous deployment)
-4. Bootstrap job that:
-   - Creates `homelab` organisation, `argocd-bot` user in Gitea
-   - Creates `platform-core` and `platform-apps` repos
-   - Pushes Terraform and Helm configs to Gitea
-   - Configures ArgoCD to pull from Gitea via `argocd-repositories` secret in `argocd` namespace
+This deploys Cilium, Gitea, and ArgoCD via Helm, then runs a bootstrap script that:
+
+1. Creates a `homelab` organisation and `argocd-bot` user in Gitea
+2. Creates the `platform-core` repository
+3. Pushes all Helm charts from `platform-core/` to Gitea
+4. Creates an `argocd-repositories` secret so ArgoCD can pull from Gitea
+5. Applies an ApplicationSet that auto-discovers every `Chart.yaml` in the repo
 
 ### 4. Verify
 
@@ -212,6 +174,8 @@ This deploys:
 # Check ArgoCD apps are syncing
 kubectl get applications -n argocd
 ```
+
+All applications should reach `Synced` and `Healthy` status.
 
 ## Configuration Reference
 
@@ -230,23 +194,28 @@ ingress:
     argocd: cd                   # cd.lab
     gitea: git                   # git.lab
     vault: secrets               # secrets.lab
+    minio: storage               # storage.lab
+    minio_api: s3                # s3.lab
 ```
+
+`render-config.py` uses these values to:
+- Generate `terraform.tfvars` with `base_domain`, `argocd_hostname`, and `gitea_hostname`
+- Generate Ansible `inventory/hosts` with `server_ip`
+- Replace `__PLACEHOLDER__` strings in `platform-core/**/values.yaml` with computed hostnames and IPs
 
 ## Post-Bootstrap Operations
 
 ### Configure DNS
 
-Platform services are exposed via ingress using hostnames defined in `config/homelab.yml`. Your local DNS must resolve these hostnames to the MetalLB LoadBalancer IP (the first IP in `network.metallb_ip_range`).
+Platform services are exposed via ingress using hostnames derived from `config/homelab.yml`. Your local DNS must resolve these hostnames to the MetalLB LoadBalancer IP (the first IP in `network.metallb_ip_range`).
 
-Based on the default configuration, create DNS entries for:
-
-| Hostname | Service | Source |
-|----------|---------|--------|
-| `cd.lab` | ArgoCD | `ingress.prefixes.argocd` |
-| `git.lab` | Gitea | `ingress.prefixes.gitea` |
-| `secrets.lab` | Vault | `ingress.prefixes.vault` |
-| `s3.lab` | MinIO S3 API | MinIO chart |
-| `storage.lab` | MinIO Console | MinIO chart |
+| Hostname | Service |
+|----------|---------|
+| `cd.lab` | ArgoCD |
+| `git.lab` | Gitea |
+| `secrets.lab` | Vault |
+| `storage.lab` | MinIO Console |
+| `s3.lab` | MinIO API |
 
 All entries should point to your LoadBalancer IP (e.g., `10.0.0.20`).
 
@@ -278,34 +247,28 @@ Export and trust the root CA for browser access:
 # Follow instructions to add to your system trust store
 ```
 
-### Migrate Terraform State to MinIO
+### Making Changes Post-Bootstrap
 
-After bootstrap, Terraform state exists as a local file. For collaboration, state locking, and GitOps compatibility, migrate it to MinIO (S3-compatible storage) running in your cluster.
+All platform changes are made through the `platform-core` repository in Gitea:
 
-This migration excludes bootstrap-only resources (`module.gitops_bootstrap`) that are no longer needed.
-
-See [docs/terraform-state-migration.md](docs/terraform-state-migration.md) for the complete migration guide.
+1. Clone `homelab/platform-core` from Gitea
+2. Edit Helm chart values or add new charts
+3. Push to Gitea
+4. ArgoCD automatically detects and applies changes
 
 ### Adding a New Platform App
 
-1. Clone `homelab/platform-apps` from Gitea
-2. Create a new chart in `platform-apps/<category>/<app-name>/`
-3. Push to `homelab/platform-apps` in Gitea
-4. ArgoCD automatically detects and deploys it
-
-### Modifying Core Infrastructure
-
-1. Clone `homelab/platform-core` from Gitea
-2. Make Terraform changes
-3. Run `terraform plan` and `terraform apply`
-4. Push changes back to Gitea
+1. Create a new chart directory in `platform-core/<category>/<app-name>/`
+2. Add a `Chart.yaml` and `values.yaml`
+3. Push to `homelab/platform-core` in Gitea
+4. ArgoCD automatically discovers the new `Chart.yaml` and creates an Application
 
 ## Credentials
 
 ```bash
 # Gitea admin
-kubectl get secret -n gitea gitea-admin-credentials -o jsonpath='{.data.username}' | base64 -d
-kubectl get secret -n gitea gitea-admin-credentials -o jsonpath='{.data.password}' | base64 -d
+kubectl get secret -n gitea gitea-admin -o jsonpath='{.data.username}' | base64 -d
+kubectl get secret -n gitea gitea-admin -o jsonpath='{.data.password}' | base64 -d
 
 # ArgoCD admin
 kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
@@ -319,55 +282,72 @@ kubectl get secret -n minio minio -o jsonpath='{.data.root-password}' | base64 -
 
 Vault is configured to auto-initialise and auto-unseal. On first startup, it creates a secret containing the root token and unseal keys:
 
+For full Vault and ESO architecture details, see [docs/secrets-management.md](docs/secrets-management.md).
+
 ```bash
-kubectl get secret -n vault vault-init-credentials -o jsonpath='{.data}' | jq
+kubectl get secret -n vault init-credentials -o jsonpath='{.data}' | jq
 ```
 
 The secret contains:
-- `root-token` - Vault root token for administrative access
-- `unseal-key-1`, `unseal-key-2`, `unseal-key-3` - Shamir unseal keys
+- `root-token` — Vault root token for administrative access
+- `unseal-key-1`, `unseal-key-2`, `unseal-key-3` — Shamir unseal keys
 
-> **Warning**: Back up this secret immediately. If `vault-init-credentials` is deleted and you cannot recover the root token and unseal keys, you will permanently lose access to all data stored in Vault.
+> **Warning**: Back up this secret immediately. If `init-credentials` is deleted and you cannot recover the root token and unseal keys, you will permanently lose access to all data stored in Vault.
 
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| Bootstrap job stuck | `kubectl logs -n gitea job/<job-name>` |
+| Bootstrap script fails | Check `terraform apply` output for the specific phase and error |
 | ArgoCD not syncing | Verify `argocd-repositories` secret exists in `argocd` namespace |
-| App not deploying | Confirm `Chart.yaml` exists in `platform-apps/<category>/<app>/` |
+| App not deploying | Confirm `Chart.yaml` exists in `platform-core/<category>/<app>/` |
 | Kubeconfig not working | Re-run `ansible-playbook playbooks/fetch_kubeconfig.yml` |
+| Port-forward fails | Ensure Gitea pod is running: `kubectl get pods -n gitea` |
 
 ## Directory Structure
 
 ```
-homelab/
+homelab-idp/
 ├── config/
-│   ├── homelab.example.yml     # Configuration template
-│   └── homelab.yml             # Your local config (gitignored)
+│   ├── homelab.example.yml       # Configuration template
+│   └── homelab.yml               # Your local config (gitignored)
 ├── scripts/
-│   ├── render-config.py        # Generate inventory + tfvars
-│   └── get-ca-cert.sh          # Export cluster CA certificate
+│   ├── render-config.py          # Generate inventory, tfvars, patch platform-core
+│   └── get-ca-cert.sh            # Export cluster CA certificate
 ├── bootstrap/
-│   ├── ansible/                # k3s provisioning
+│   ├── ansible/                  # k3s provisioning
 │   │   ├── ansible.cfg
-│   │   ├── inventory/hosts     # Generated
+│   │   ├── inventory/hosts       # Generated by render-config.py
 │   │   ├── playbooks/
 │   │   └── ansible_collections/
-│   └── terraform/              # Platform bootstrap
-│       ├── main.tf             # Core modules
-│       ├── bootstrap.tf        # Bootstrap-only (not pushed to Gitea)
+│   └── terraform/                # One-shot platform bootstrap
+│       ├── main.tf               # Cilium, Gitea, ArgoCD, Bootstrap modules
 │       ├── variables.tf
-│       ├── variables-bootstrap.tf
+│       ├── providers.tf
 │       └── core/
-│           ├── cilium/
-│           ├── gitea/
-│           ├── argocd/
-│           ├── argocd-appset/
-│           └── gitops-bootstrap/  # One-time bootstrap job
-└── platform-apps/              # Helm charts for ArgoCD
+│           ├── cilium/           # Cilium CNI Helm release
+│           ├── gitea/            # Gitea Helm release
+│           ├── argocd/           # ArgoCD Helm release
+│           └── bootstrap/        # local-exec bootstrap script
+│               ├── scripts/
+│               │   └── bootstrap.sh
+│               └── templates/
+│                   └── appset.yaml
+└── platform-core/                # Helm charts managed by ArgoCD
     ├── core/
+    │   ├── argocd/
+    │   ├── cert-manager/
+    │   ├── cilium/
+    │   ├── gitea/
+    │   ├── ingress-nginx/
+    │   └── metallb/
     ├── security/
+    │   ├── external-secrets/
+    │   └── vault/
     ├── storage/
+    │   ├── cloudnative-pg/
+    │   └── minio/
     └── controlplane/
+        ├── crossplane/
+        └── crossplane-compositions/
 ```

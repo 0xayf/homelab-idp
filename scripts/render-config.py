@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from functools import reduce
 from pathlib import Path
 
 try:
@@ -11,35 +12,61 @@ except ImportError:
     print("PyYAML is required.", file=sys.stderr)
     sys.exit(1)
 
+PLATFORM_CORE_PATCHES: dict[str, list[str]] = {
+    "__METALLB_IP_RANGE__": ["network", "metallb_ip_range"],
+    "__ARGOCD_HOSTNAME__": ["ingress", "prefixes", "argocd"],
+    "__GITEA_HOSTNAME__": ["ingress", "prefixes", "gitea"],
+    "__VAULT_HOSTNAME__": ["ingress", "prefixes", "vault"],
+    "__MINIO_HOSTNAME__": ["ingress", "prefixes", "minio"],
+    "__MINIO_API_HOSTNAME__": ["ingress", "prefixes", "minio_api"],
+}
+
 
 def get_required(data: dict, path: list[str]) -> str:
-    cursor = data
-    for key in path:
-        if not isinstance(cursor, dict) or key not in cursor:
-            joined = ".".join(path)
-            raise KeyError(f"Missing required config value: {joined}")
-        cursor = cursor[key]
-    if cursor in (None, ""):
-        joined = ".".join(path)
-        raise ValueError(f"Config value is empty: {joined}")
-    if not isinstance(cursor, str):
-        joined = ".".join(path)
-        raise TypeError(f"Config value must be a string: {joined}")
-    return cursor
+    dotted = ".".join(path)
+    try:
+        value = reduce(lambda d, k: d[k], path, data)
+    except (KeyError, TypeError):
+        raise KeyError(f"Missing required config value: {dotted}") from None
+
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Config value must be a non-empty string: {dotted}")
+    return value
 
 
-def join_hostname(prefix: str, base_domain: str) -> str:
-    if not prefix:
-        return base_domain
-    return f"{prefix}.{base_domain}"
+def build_hostname(prefix: str, base_domain: str) -> str:
+    return f"{prefix}.{base_domain}" if prefix else base_domain
+
+
+def resolve_value(placeholder: str, config: dict, base_domain: str) -> str:
+    path = PLATFORM_CORE_PATCHES[placeholder]
+    raw = get_required(config, path)
+    if path[:2] == ["ingress", "prefixes"]:
+        return build_hostname(raw, base_domain)
+    return raw
+
+
+def patch_files(platform_core: Path, replacements: dict[str, str]) -> list[Path]:
+    patched: list[Path] = []
+    for path in sorted(platform_core.rglob("values.yaml")):
+        original = path.read_text()
+        content = original
+        for placeholder, value in replacements.items():
+            content = content.replace(placeholder, value)
+        if content != original:
+            path.write_text(content)
+            patched.append(path)
+    return patched
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Render homelab config into inventory and tfvars")
+    parser = argparse.ArgumentParser(
+        description="Render homelab config into inventory, tfvars, and platform-core values",
+    )
     parser.add_argument(
         "--config",
         default="config/homelab.yml",
-        help="Path to homelab config YAML (default: config/homelab.yml)",
+        help="path to homelab config YAML (default: config/homelab.yml)",
     )
     args = parser.parse_args()
 
@@ -55,19 +82,15 @@ def main() -> int:
     config = yaml.safe_load(config_path.read_text()) or {}
 
     server_ip = get_required(config, ["cluster", "server_ip"])
-    metallb_ip_range = get_required(config, ["network", "metallb_ip_range"])
     base_domain = get_required(config, ["ingress", "base_domain"])
-    argocd_prefix = get_required(config, ["ingress", "prefixes", "argocd"])
-    gitea_prefix = get_required(config, ["ingress", "prefixes", "gitea"])
-    vault_prefix = get_required(config, ["ingress", "prefixes", "vault"])
-    minio_prefix = get_required(config, ["ingress", "prefixes", "minio"])
-    minio_api_prefix = get_required(config, ["ingress", "prefixes", "minio_api"])
 
-    argocd_hostname = join_hostname(argocd_prefix, base_domain)
-    gitea_hostname = join_hostname(gitea_prefix, base_domain)
-    vault_hostname = join_hostname(vault_prefix, base_domain)
-    minio_hostname = join_hostname(minio_prefix, base_domain)
-    minio_api_hostname = join_hostname(minio_api_prefix, base_domain)
+    replacements = {
+        ph: resolve_value(ph, config, base_domain)
+        for ph in PLATFORM_CORE_PATCHES
+    }
+
+    argocd_hostname = replacements["__ARGOCD_HOSTNAME__"]
+    gitea_hostname = replacements["__GITEA_HOSTNAME__"]
 
     inventory_path = repo_root / "bootstrap/ansible/inventory/hosts"
     inventory_path.parent.mkdir(parents=True, exist_ok=True)
@@ -75,34 +98,20 @@ def main() -> int:
 
     tfvars_path = repo_root / "bootstrap/terraform/terraform.tfvars"
     tfvars_path.parent.mkdir(parents=True, exist_ok=True)
-    tfvars_path.write_text(
-        "\n".join(
-            [
-                f"base_domain = \"{base_domain}\"",
-                f"argocd_hostname = \"{argocd_hostname}\"",
-                f"gitea_hostname = \"{gitea_hostname}\"",
-                f"minio_api_hostname = \"{minio_api_hostname}\"",
-                "",
-            ]
-        )
-    )
+    tfvars_lines = [
+        f'base_domain = "{base_domain}"',
+        f'argocd_hostname = "{argocd_hostname}"',
+        f'gitea_hostname = "{gitea_hostname}"',
+    ]
+    tfvars_path.write_text("\n".join(tfvars_lines) + "\n")
 
-    bootstrap_tfvars_path = repo_root / "bootstrap/terraform/bootstrap.auto.tfvars"
-    bootstrap_tfvars_path.write_text(
-        "\n".join(
-            [
-                f"vault_hostname = \"{vault_hostname}\"",
-                f"minio_hostname = \"{minio_hostname}\"",
-                f"metallb_ip_range = \"{metallb_ip_range}\"",
-                "",
-            ]
-        )
-    )
+    platform_core = repo_root / "platform-core"
+    patched_files = patch_files(platform_core, replacements)
 
+    rendered = [inventory_path, tfvars_path, *patched_files]
     print("Rendered:")
-    print(f"- {inventory_path}")
-    print(f"- {tfvars_path}")
-    print(f"- {bootstrap_tfvars_path}")
+    for path in rendered:
+        print(f"  {path}")
     return 0
 
 

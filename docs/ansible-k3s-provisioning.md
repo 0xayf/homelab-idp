@@ -1,8 +1,10 @@
 # Ansible Galaxy Collections (ubuntu + k3s)
 
-This directory contains Ansible playbooks and local collections used to provision
-a single-node k3s cluster. Inventory is generated from `config/homelab.yml` via
-`scripts/render-config.py`.
+This guide documents the Ansible playbooks and local collections used to provision
+a single-node k3s cluster.
+
+Implementation files live in `bootstrap/ansible/`. Inventory is generated from
+`config/homelab.yml` via `scripts/render-config.py`.
 
 ## Install Ansible
 ```bash
@@ -11,7 +13,7 @@ pip install --upgrade pip ansible
 ```
 
 Collections are vendored in `ansible_collections/` and `ansible.cfg` already points
-there — **no installation required**.
+there - **no installation required**.
 
 > **Warning:** Do not install the collections to `~/.ansible/collections`. Ansible
 > searches user collections first, so an installed copy will shadow the vendored
@@ -58,12 +60,12 @@ The `homelab.ubuntu.create_account` role supports creating two types of accounts
 
 ## Modify Files
 
-- `inventory/hosts` - generated from `config/homelab.yml`.
-- `ansible.cfg` - uncomment `remote_user` and `private_key_file` if you want defaults,
+- `bootstrap/ansible/inventory/hosts` - generated from `config/homelab.yml`.
+- `bootstrap/ansible/ansible.cfg` - uncomment `remote_user` and `private_key_file` if you want defaults,
   or pass them via CLI flags (`-u <user>`, `--private-key <path>`).
-- `playbooks/create_account.yml` - account name, SSH key path, and password env var.
-- `playbooks/delete_account.yml` - account name to remove.
-- `playbooks/install_k3s.yml` - feature toggles (`disable_flannel`, `disable_traefik`,
+- `bootstrap/ansible/playbooks/create_account.yml` - account name, SSH key path, and password env var.
+- `bootstrap/ansible/playbooks/delete_account.yml` - account name to remove.
+- `bootstrap/ansible/playbooks/install_k3s.yml` - feature toggles (`disable_flannel`, `disable_traefik`,
   `disable_servicelb`, `disable_embedded_registry`), k3s binary version `k3s_install_version`.
 
 ## Playbook Commands
@@ -142,7 +144,7 @@ ansible-playbook -u ansible playbooks/install_k3s.yml \
   --ask-become-pass
 ```
 
-This installs k3s and **automatically merges the kubeconfig to your local machine** (renaming the context to `homelab`). 
+This installs k3s and **automatically merges the kubeconfig to your local machine** (renaming the context to `homelab`).
 
 It also disables the following components (since we either want to use different tools, and/or manage them via ArgoCD):
 - flannel (CNI)

@@ -4,9 +4,9 @@ resource "random_password" "admin_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-resource "kubernetes_secret_v1" "gitea_admin_credentials" {
+resource "kubernetes_secret_v1" "gitea_admin" {
   metadata {
-    name      = "gitea-admin-credentials"
+    name      = "gitea-admin"
     namespace = var.namespace
   }
   data = {

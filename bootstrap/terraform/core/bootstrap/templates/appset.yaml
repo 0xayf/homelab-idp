@@ -1,13 +1,13 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: platform-services
+  name: platform-core
   namespace: "${namespace}"
 spec:
   goTemplate: true
   generators:
   - git:
-      repoURL: http://gitea-http.gitea.svc.cluster.local:3000/${platform_org_name}/${platform_apps_repo_name}.git
+      repoURL: http://gitea-http.gitea.svc.cluster.local:3000/${platform_org_name}/${platform_core_repo_name}.git
       revision: HEAD
       files:
       - path: "**/Chart.yaml"
@@ -18,12 +18,11 @@ spec:
     spec:
       project: default
       source:
-        repoURL: http://gitea-http.gitea.svc.cluster.local:3000/${platform_org_name}/${platform_apps_repo_name}.git
+        repoURL: http://gitea-http.gitea.svc.cluster.local:3000/${platform_org_name}/${platform_core_repo_name}.git
         targetRevision: HEAD
         path: '{{ .path.path }}'
         helm:
           releaseName: '{{ .path.basename }}'
-          dependencyUpdate: true
       destination:
         server: https://kubernetes.default.svc
         namespace: '{{ .path.basename }}'

@@ -5,7 +5,13 @@ output "admin_username" {
 
 output "admin_password_secret_name" {
   description = "The name of the Kubernetes secret holding the Gitea admin password."
-  value       = kubernetes_secret_v1.gitea_admin_credentials.metadata[0].name
+  value       = kubernetes_secret_v1.gitea_admin.metadata[0].name
+}
+
+output "admin_password" {
+  description = "The Gitea admin password."
+  value       = random_password.admin_password.result
+  sensitive   = true
 }
 
 output "namespace" {

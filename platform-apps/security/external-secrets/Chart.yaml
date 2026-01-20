@@ -1,8 +1,0 @@
-apiVersion: v2
-name: external-secrets
-description: A wrapper chart to deploy the External Secrets Operator.
-version: 0.1.0
-dependencies:
-  - name: external-secrets
-    version: "1.2.0"
-    repository: "https://charts.external-secrets.io"

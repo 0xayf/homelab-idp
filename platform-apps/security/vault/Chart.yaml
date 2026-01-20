@@ -1,8 +1,0 @@
-apiVersion: v2
-name: vault
-description: A wrapper chart to deploy HashiCorp Vault for secrets management.
-version: 0.1.0
-dependencies:
-  - name: vault
-    version: "0.31.0"
-    repository: "https://helm.releases.hashicorp.com"

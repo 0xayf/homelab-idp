@@ -38,11 +38,10 @@ override.tf.json
 .terraformrc
 terraform.rc
 
-*.crt
-AGENTS.md
-CLAUDE.md
-
 # Local homelab config
 config/homelab.yml
 bootstrap/ansible/inventory/hosts
-bootstrap/terraform/core/gitops-bootstrap/.generated
+
+*.crt
+AGENTS.md
+CLAUDE.md

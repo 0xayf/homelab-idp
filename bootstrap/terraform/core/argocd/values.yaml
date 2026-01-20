@@ -1,5 +1,5 @@
 crds:
-  keep: false
+  keep: true
 
 server:
   url: https://${hostname}
