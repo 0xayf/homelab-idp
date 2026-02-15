@@ -1,0 +1,88 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xpostgresdatabases.database.platform.local
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  group: database.platform.local
+  names:
+    kind: XPostgresDatabase
+    plural: xpostgresdatabases
+  claimNames:
+    kind: PostgresDatabase
+    plural: postgresdatabases
+  connectionSecretKeys:
+    - host
+    - port
+    - username
+    - password
+    - database
+    - uri
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - databaseName
+              properties:
+                databaseName:
+                  type: string
+                  description: |
+                    Name of the database. This will be used for:
+                    - The PostgreSQL database name
+                    - The database user name
+                    - Resource naming (cluster, secrets, etc.)
+                  pattern: "^[a-z][a-z0-9-]{0,61}[a-z0-9]$"
+                  minLength: 2
+                  maxLength: 63
+                storageSize:
+                  type: string
+                  description: Size of the persistent volume for each instance
+                  default: "1Gi"
+                  pattern: "^[0-9]+[GM]i$"
+                postgresVersion:
+                  type: string
+                  description: PostgreSQL major version
+                  default: "17"
+                  enum:
+                    - "15"
+                    - "16"
+                    - "17"
+                resources:
+                  type: object
+                  description: Resource limits for PostgreSQL pods
+                  properties:
+                    cpu:
+                      type: string
+                      description: CPU limit
+                      default: "500m"
+                    memory:
+                      type: string
+                      description: Memory limit
+                      default: "512Mi"
+                enablePooler:
+                  type: boolean
+                  description: Enable PgBouncer connection pooler (single instance)
+                  default: false
+            status:
+              type: object
+              properties:
+                clusterName:
+                  type: string
+                  description: Name of the CloudNative-PG cluster
+                primaryHost:
+                  type: string
+                  description: Hostname of the primary PostgreSQL instance
+                vaultSecretPath:
+                  type: string
+                  description: Path to the credentials in Vault
+                ready:
+                  type: boolean
+                  description: Whether the database is ready

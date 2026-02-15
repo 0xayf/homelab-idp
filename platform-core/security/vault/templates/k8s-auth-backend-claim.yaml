@@ -1,0 +1,14 @@
+apiVersion: secrets.platform.lab/v1alpha1
+kind: K8sAuthBackend
+metadata:
+  name: vault-k8s-auth-backend
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    crossplane.io/external-name: kubernetes
+spec:
+  path: kubernetes
+  description: "Kubernetes auth backend"
+  createBackend: true
+  kubernetesHost: https://kubernetes.default.svc
+  disableLocalCaJwt: false

@@ -1,0 +1,40 @@
+gitea:
+  baseUrl: http://gitea-http.gitea.svc.cluster.local:3000
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: lab-ca-issuer
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/hsts: "true"
+    hosts:
+      - host: __GITEA_HOSTNAME__
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: gitea-tls-secret
+        hosts:
+          - __GITEA_HOSTNAME__
+
+  gitea:
+    config:
+      server:
+        DOMAIN: __GITEA_HOSTNAME__
+        SSH_DOMAIN: __GITEA_HOSTNAME__
+        ROOT_URL: https://__GITEA_HOSTNAME__/
+
+  postgresql:
+    enabled: true
+    persistence:
+      enabled: true
+
+  postgresql-ha:
+    enabled: false
+
+  persistence:
+    enabled: true
+    size: 5Gi
+    labels:
+      app.kubernetes.io/managed-by: argocd

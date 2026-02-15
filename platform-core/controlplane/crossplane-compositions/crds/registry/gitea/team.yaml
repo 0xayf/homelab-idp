@@ -1,0 +1,65 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: teams.registry.platform.lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    crossplane.io/xrd: teams.registry.platform.lab
+spec:
+  compositeTypeRef:
+    apiVersion: registry.platform.lab/v1alpha1
+    kind: Team
+  mode: Pipeline
+  pipeline:
+    - step: create-team
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := getCompositeResource . -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $namespace := $xr.metadata.namespace -}}
+            {{- $orgName := default "homelab" $xr.spec.orgName -}}
+            {{- $repoName := $xr.spec.repoName -}}
+            {{- $permission := default "write" $xr.spec.permission -}}
+            {{- $providerConfigName := default "gitea-provider-config" $xr.spec.providerConfigName -}}
+            {{- $observedResources := .observed.resources | default dict -}}
+            {{- $observedTeam := index $observedResources "team" | default dict -}}
+            {{- $teamID := $observedTeam | dig "resource" "status" "atProvider" "id" "" -}}
+            ---
+            apiVersion: gitea.gitea.m.crossplane.io/v1alpha1
+            kind: Team
+            metadata:
+              name: {{ $name }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: team
+            spec:
+              forProvider:
+                name: {{ $name }}
+                organisation: {{ $orgName }}
+                description: "Registry access for {{ $repoName }}"
+                permission: {{ $permission }}
+                includeAllRepositories: false
+                repositories:
+                  - {{ $repoName }}
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: {{ $providerConfigName }}
+            ---
+            apiVersion: registry.platform.lab/v1alpha1
+            kind: Team
+            metadata:
+              name: {{ $name }}
+            status:
+              teamId: {{ printf "%v" $teamID | quote }}
+              ready: true
+
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready

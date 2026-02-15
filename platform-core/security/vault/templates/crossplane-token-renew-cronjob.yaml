@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-token-renew-sa
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-token-renew-role
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["crossplane-vault-token"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-token-renew-binding
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: vault-token-renew-sa
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: vault-token-renew-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vault-crossplane-token-renew
+  namespace: {{ .Release.Namespace }}
+spec:
+  schedule: "0 0 * * 0"  # Weekly on Sunday at midnight
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: vault-token-renew-sa
+          restartPolicy: OnFailure
+          containers:
+          - name: renew
+            image: alpine:3.22.1
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                set -e
+                apk add --no-cache curl jq kubectl > /dev/null
+
+                VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+                CREDS=$(kubectl get secret crossplane-vault-token -n vault -o jsonpath='{.data.credentials}' | base64 -d)
+                TOKEN=$(echo "$CREDS" | jq -r '.token')
+
+                echo "Renewing Vault token..."
+                RESPONSE=$(curl -s -X POST -H "X-Vault-Token: $TOKEN" "$VAULT_ADDR/v1/auth/token/renew-self")
+
+                if echo "$RESPONSE" | jq -e '.auth' >/dev/null 2>&1; then
+                  TTL=$(echo "$RESPONSE" | jq -r '.auth.lease_duration')
+                  echo "Token renewed successfully. New TTL: ${TTL}s"
+                else
+                  echo "ERROR: Failed to renew token"
+                  echo "$RESPONSE"
+                  exit 1
+                fi

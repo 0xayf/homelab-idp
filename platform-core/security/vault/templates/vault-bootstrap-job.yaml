@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-auth-config-script
+  namespace: {{ .Release.Namespace }}
+data:
+  run.sh: |
+    #!/bin/sh
+    set -e
+
+    VAULT_ADDR="http://vault-0.vault-internal:8200"
+    NAMESPACE="{{ .Release.Namespace }}"
+    ROOT_SECRET="init-credentials"
+    CROSSPLANE_TOKEN_SECRET="crossplane-vault-token"
+
+    log() {
+      echo "==> $(date '+%Y-%m-%d %H:%M:%S') | $@"
+    }
+
+    log "--- Vault Auth Config Script Started ---"
+
+    log "Installing dependencies..."
+    apk add --no-cache curl jq kubectl > /dev/null
+    log "Dependencies installed."
+
+    VAULT_TOKEN=$(kubectl -n "$NAMESPACE" get secret "$ROOT_SECRET" \
+              -o jsonpath='{.data.root-token}' | base64 -d)
+
+    # ===========================================
+    # Bootstrap Policy (Crossplane bootstrap token)
+    # ===========================================
+
+    log "Creating 'crossplane' policy..."
+    curl -s -X PUT -H "X-Vault-Token: $VAULT_TOKEN" \
+        -d '{"policy":"path \"*\" { capabilities = [\"create\",\"read\",\"update\",\"delete\",\"list\",\"sudo\"]}"}' \
+        "$VAULT_ADDR/v1/sys/policies/acl/crossplane"
+
+    # ===========================================
+    # Crossplane Token (periodic, 30-day renewal)
+    # ===========================================
+
+    log "Checking for existing crossplane token..."
+    NEED_NEW_TOKEN=false
+    EXISTING_TOKEN=""
+
+    if kubectl get secret "$CROSSPLANE_TOKEN_SECRET" -n "$NAMESPACE" >/dev/null 2>&1; then
+      log "Found existing token secret - validating..."
+      CREDS_JSON=$(kubectl get secret "$CROSSPLANE_TOKEN_SECRET" -n "$NAMESPACE" \
+        -o jsonpath='{.data.credentials}' | base64 -d 2>/dev/null || echo "")
+      if [ -n "$CREDS_JSON" ]; then
+        EXISTING_TOKEN=$(echo "$CREDS_JSON" | jq -r '.token')
+      else
+        # Fallback for old format (plain token)
+        EXISTING_TOKEN=$(kubectl get secret "$CROSSPLANE_TOKEN_SECRET" -n "$NAMESPACE" \
+          -o jsonpath='{.data.token}' | base64 -d 2>/dev/null || echo "")
+      fi
+
+      LOOKUP=$(curl -s -H "X-Vault-Token: $EXISTING_TOKEN" "$VAULT_ADDR/v1/auth/token/lookup-self" || true)
+
+      if echo "$LOOKUP" | jq -e '.data' >/dev/null 2>&1; then
+        POLICIES=$(echo "$LOOKUP" | jq -r '.data.policies | join(",")')
+        if echo "$POLICIES" | grep -q "crossplane"; then
+          log "Existing token is valid with crossplane policy"
+        else
+          log "Token valid but missing crossplane policy - replacing"
+          NEED_NEW_TOKEN=true
+        fi
+      else
+        log "Existing token is expired or invalid - replacing"
+        NEED_NEW_TOKEN=true
+      fi
+    else
+      log "No existing token found - creating new one"
+      NEED_NEW_TOKEN=true
+    fi
+
+    if [ "$NEED_NEW_TOKEN" = true ]; then
+      log "Creating periodic token (720h period, renewable indefinitely)..."
+      RESPONSE=$(curl -s -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+        -d '{"policies":["crossplane"],"period":"720h","display_name":"crossplane-provider"}' \
+        "$VAULT_ADDR/v1/auth/token/create")
+      EXISTING_TOKEN=$(echo "$RESPONSE" | jq -r '.auth.client_token')
+
+      if [ -z "$EXISTING_TOKEN" ] || [ "$EXISTING_TOKEN" = "null" ]; then
+        log "ERROR: Failed to create token"
+        echo "$RESPONSE"
+        exit 1
+      fi
+      log "Token created successfully"
+    fi
+
+    log "Storing token in secret $CROSSPLANE_TOKEN_SECRET..."
+    kubectl apply -f - <<ENDSECRET
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: $CROSSPLANE_TOKEN_SECRET
+      namespace: $NAMESPACE
+      labels:
+        app.kubernetes.io/managed-by: vault-auth-config
+    type: Opaque
+    stringData:
+      credentials: '{"token":"$EXISTING_TOKEN"}'
+    ENDSECRET
+
+    log "--- Vault Auth Config Script Finished Successfully ---"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-auth-config-sa
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-auth-config-role
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-auth-config-binding
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+subjects:
+  - kind: ServiceAccount
+    name: vault-auth-config-sa
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: vault-auth-config-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: "vault-auth-config-"
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  template:
+    spec:
+      serviceAccountName: vault-auth-config-sa
+      restartPolicy: OnFailure
+      containers:
+      - name: configurator
+        image: alpine:3.22.1
+        command: ["/bin/sh", "/config/run.sh"]
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: vault-auth-config-script
+          defaultMode: 0755

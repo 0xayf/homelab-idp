@@ -1,0 +1,65 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: repos.registry.platform.lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    crossplane.io/xrd: repos.registry.platform.lab
+spec:
+  compositeTypeRef:
+    apiVersion: registry.platform.lab/v1alpha1
+    kind: Repo
+  mode: Pipeline
+  pipeline:
+    - step: create-repository
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := getCompositeResource . -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $namespace := $xr.metadata.namespace -}}
+            {{- $orgName := default "homelab" $xr.spec.orgName -}}
+            {{- $registryHost := default "git.lab" $xr.spec.registryHost -}}
+            {{- $description := default "" $xr.spec.description -}}
+            {{- $private := default true $xr.spec.private -}}
+            {{- $providerConfigName := default "gitea-provider-config" $xr.spec.providerConfigName -}}
+            ---
+            apiVersion: gitea.gitea.m.crossplane.io/v1alpha1
+            kind: Repository
+            metadata:
+              name: {{ $name }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: repository
+            spec:
+              forProvider:
+                name: {{ $name }}
+                username: {{ $orgName }}
+                description: {{ $description }}
+                private: {{ $private }}
+                autoInit: true
+                defaultBranch: main
+                hasIssues: false
+                hasWiki: false
+                hasProjects: false
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: {{ $providerConfigName }}
+            ---
+            apiVersion: registry.platform.lab/v1alpha1
+            kind: Repo
+            metadata:
+              name: {{ $name }}
+            status:
+              repositoryUrl: "{{ $registryHost }}/{{ $orgName }}/{{ $name }}"
+              ready: true
+
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready

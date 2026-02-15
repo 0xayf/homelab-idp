@@ -1,0 +1,368 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xpostgresdatabases.database.platform.local
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    crossplane.io/xrd: xpostgresdatabases.database.platform.local
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  compositeTypeRef:
+    apiVersion: database.platform.local/v1alpha1
+    kind: XPostgresDatabase
+  mode: Pipeline
+  pipeline:
+    - step: render-postgres-database
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource }}
+            {{- $spec := $xr.spec }}
+            {{- $claimRef := $xr.spec.claimRef | default dict }}
+            {{- $claimNamespace := $claimRef.namespace | default "default" }}
+
+            {{/* Core configuration */}}
+            {{- $databaseName := $spec.databaseName }}
+            {{- $storageSize := default "1Gi" $spec.storageSize }}
+            {{- $postgresVersion := default "17" $spec.postgresVersion }}
+            {{- $enablePooler := default false $spec.enablePooler }}
+
+            {{/* Resource configuration */}}
+            {{- $resources := default dict $spec.resources }}
+            {{- $cpuLimit := default "500m" $resources.cpu }}
+            {{- $memoryLimit := default "512Mi" $resources.memory }}
+
+            {{/* Derived names */}}
+            {{- $clusterName := printf "pg-%s" $databaseName }}
+            {{- $secretName := printf "%s-credentials" $databaseName }}
+            {{- $vaultSecretPath := printf "database/%s" $databaseName }}
+            {{- $primaryHost := printf "%s-rw.%s.svc.cluster.local" $clusterName $claimNamespace }}
+
+            {{/* Generate password - check if we have an existing one */}}
+            {{- $observedResources := .observed.resources | default dict }}
+            {{- $existingSecret := index $observedResources "db-password-secret" | default dict }}
+            {{- $existingData := $existingSecret | dig "resource" "spec" "forProvider" "manifest" "stringData" dict }}
+            {{- $password := "" }}
+            {{- if index $existingData "password" }}
+            {{- $password = index $existingData "password" }}
+            {{- else }}
+            {{- $password = randAlphaNum 32 }}
+            {{- end }}
+
+            ---
+            {{/* Step 1: Create the password secret in crossplane-system for Vault sync */}}
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: db-password-secret
+              labels:
+                database.platform.local/database-name: {{ $databaseName }}
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: {{ printf "vault-db-%s" $databaseName }}
+                    namespace: crossplane-system
+                    labels:
+                      database.platform.local/managed-by: crossplane
+                      database.platform.local/database-name: {{ $databaseName }}
+                  type: Opaque
+                  stringData:
+                    password: {{ $password | quote }}
+                    username: {{ $databaseName | quote }}
+                    database: {{ $databaseName | quote }}
+                    host: {{ $primaryHost | quote }}
+                    port: "5432"
+                    uri: {{ printf "postgresql://%s:%s@%s:5432/%s" $databaseName $password $primaryHost $databaseName | quote }}
+                    vault-path: {{ printf "platform/%s" $vaultSecretPath | quote }}
+              providerConfigRef:
+                name: provider-kubernetes-config
+            ---
+            {{/* Step 2: Push the password to Vault */}}
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: db-push-secret
+              labels:
+                database.platform.local/database-name: {{ $databaseName }}
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: external-secrets.io/v1alpha1
+                  kind: PushSecret
+                  metadata:
+                    name: {{ printf "push-db-%s" $databaseName }}
+                    namespace: crossplane-system
+                  spec:
+                    refreshInterval: 1h
+                    secretStoreRefs:
+                      - name: vault-kv-store
+                        kind: SecretStore
+                    selector:
+                      secret:
+                        name: {{ printf "vault-db-%s" $databaseName }}
+                    data:
+                      - match:
+                          secretKey: password
+                          remoteRef:
+                            remoteKey: {{ $vaultSecretPath }}
+                            property: password
+                      - match:
+                          secretKey: username
+                          remoteRef:
+                            remoteKey: {{ $vaultSecretPath }}
+                            property: username
+                      - match:
+                          secretKey: database
+                          remoteRef:
+                            remoteKey: {{ $vaultSecretPath }}
+                            property: database
+                      - match:
+                          secretKey: host
+                          remoteRef:
+                            remoteKey: {{ $vaultSecretPath }}
+                            property: host
+                      - match:
+                          secretKey: port
+                          remoteRef:
+                            remoteKey: {{ $vaultSecretPath }}
+                            property: port
+                      - match:
+                          secretKey: uri
+                          remoteRef:
+                            remoteKey: {{ $vaultSecretPath }}
+                            property: uri
+              providerConfigRef:
+                name: provider-kubernetes-config
+              references:
+                - dependsOn:
+                    apiVersion: v1
+                    kind: Secret
+                    namespace: crossplane-system
+                    name: {{ printf "vault-db-%s" $databaseName }}
+            ---
+            {{/* Step 3: Create the CNPG cluster credentials secret in claim namespace */}}
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: cnpg-credentials-secret
+              labels:
+                database.platform.local/database-name: {{ $databaseName }}
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: {{ $secretName }}
+                    namespace: {{ $claimNamespace }}
+                    labels:
+                      database.platform.local/managed-by: crossplane
+                      database.platform.local/database-name: {{ $databaseName }}
+                      cnpg.io/reload: "true"
+                  type: kubernetes.io/basic-auth
+                  stringData:
+                    username: {{ $databaseName | quote }}
+                    password: {{ $password | quote }}
+              providerConfigRef:
+                name: provider-kubernetes-config
+              references:
+                - dependsOn:
+                    apiVersion: v1
+                    kind: Secret
+                    namespace: crossplane-system
+                    name: {{ printf "vault-db-%s" $databaseName }}
+            ---
+            {{/* Step 4: Create the CloudNative-PG Cluster */}}
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: cnpg-cluster
+              labels:
+                database.platform.local/database-name: {{ $databaseName }}
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: postgresql.cnpg.io/v1
+                  kind: Cluster
+                  metadata:
+                    name: {{ $clusterName }}
+                    namespace: {{ $claimNamespace }}
+                    labels:
+                      database.platform.local/managed-by: crossplane
+                      database.platform.local/database-name: {{ $databaseName }}
+                  spec:
+                    instances: 1
+                    imageName: ghcr.io/cloudnative-pg/postgresql:{{ $postgresVersion }}
+
+                    postgresql:
+                      parameters:
+                        shared_buffers: "128MB"
+                        max_connections: "100"
+
+                    bootstrap:
+                      initdb:
+                        database: {{ $databaseName }}
+                        owner: {{ $databaseName }}
+                        secret:
+                          name: {{ $secretName }}
+
+                    storage:
+                      size: {{ $storageSize }}
+                      storageClass: local-path
+
+                    resources:
+                      limits:
+                        cpu: {{ $cpuLimit | quote }}
+                        memory: {{ $memoryLimit | quote }}
+                      requests:
+                        cpu: "100m"
+                        memory: "256Mi"
+
+                    monitoring:
+                      enablePodMonitor: false
+              providerConfigRef:
+                name: provider-kubernetes-config
+              references:
+                - dependsOn:
+                    apiVersion: v1
+                    kind: Secret
+                    namespace: {{ $claimNamespace }}
+                    name: {{ $secretName }}
+            {{- if $enablePooler }}
+            ---
+            {{/* Step 5: Create PgBouncer Pooler (optional) */}}
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: cnpg-pooler
+              labels:
+                database.platform.local/database-name: {{ $databaseName }}
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: postgresql.cnpg.io/v1
+                  kind: Pooler
+                  metadata:
+                    name: {{ $clusterName }}-pooler
+                    namespace: {{ $claimNamespace }}
+                    labels:
+                      database.platform.local/managed-by: crossplane
+                      database.platform.local/database-name: {{ $databaseName }}
+                  spec:
+                    cluster:
+                      name: {{ $clusterName }}
+                    instances: 1
+                    type: rw
+                    pgbouncer:
+                      poolMode: transaction
+                      parameters:
+                        max_client_conn: "1000"
+                        default_pool_size: "25"
+              providerConfigRef:
+                name: provider-kubernetes-config
+              references:
+                - dependsOn:
+                    apiVersion: postgresql.cnpg.io/v1
+                    kind: Cluster
+                    namespace: {{ $claimNamespace }}
+                    name: {{ $clusterName }}
+            {{- end }}
+            ---
+            {{/* Step 6: Create ExternalSecret in claim namespace to pull credentials from Vault */}}
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: external-secret
+              labels:
+                database.platform.local/database-name: {{ $databaseName }}
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: external-secrets.io/v1
+                  kind: ExternalSecret
+                  metadata:
+                    name: {{ printf "%s-db-credentials" $databaseName }}
+                    namespace: {{ $claimNamespace }}
+                    labels:
+                      database.platform.local/managed-by: crossplane
+                      database.platform.local/database-name: {{ $databaseName }}
+                  spec:
+                    refreshInterval: 1h
+                    secretStoreRef:
+                      name: vault-kv-store
+                      kind: SecretStore
+                    target:
+                      name: {{ printf "%s-db" $databaseName }}
+                      creationPolicy: Owner
+                    data:
+                      - secretKey: password
+                        remoteRef:
+                          key: {{ $vaultSecretPath }}
+                          property: password
+                      - secretKey: username
+                        remoteRef:
+                          key: {{ $vaultSecretPath }}
+                          property: username
+                      - secretKey: database
+                        remoteRef:
+                          key: {{ $vaultSecretPath }}
+                          property: database
+                      - secretKey: host
+                        remoteRef:
+                          key: {{ $vaultSecretPath }}
+                          property: host
+                      - secretKey: port
+                        remoteRef:
+                          key: {{ $vaultSecretPath }}
+                          property: port
+                      - secretKey: uri
+                        remoteRef:
+                          key: {{ $vaultSecretPath }}
+                          property: uri
+              providerConfigRef:
+                name: provider-kubernetes-config
+              references:
+                - dependsOn:
+                    apiVersion: external-secrets.io/v1alpha1
+                    kind: PushSecret
+                    namespace: crossplane-system
+                    name: {{ printf "push-db-%s" $databaseName }}
+            ---
+            apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+            kind: CompositeConnectionDetails
+            data:
+              host: {{ $primaryHost | b64enc }}
+              port: {{ "5432" | b64enc }}
+              username: {{ $databaseName | b64enc }}
+              password: {{ $password | b64enc }}
+              database: {{ $databaseName | b64enc }}
+              uri: {{ printf "postgresql://%s:%s@%s:5432/%s" $databaseName $password $primaryHost $databaseName | b64enc }}
+            ---
+            apiVersion: database.platform.local/v1alpha1
+            kind: XPostgresDatabase
+            status:
+              clusterName: {{ $clusterName }}
+              primaryHost: {{ $primaryHost }}
+              vaultSecretPath: {{ printf "platform/%s" $vaultSecretPath }}
+              {{- $cluster := index $observedResources "cnpg-cluster" | default dict }}
+              {{- $clusterStatus := $cluster | dig "resource" "status" "atProvider" "manifest" "status" dict }}
+              {{- $phase := $clusterStatus | dig "phase" "" }}
+              ready: {{ eq $phase "Cluster in healthy state" }}
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready

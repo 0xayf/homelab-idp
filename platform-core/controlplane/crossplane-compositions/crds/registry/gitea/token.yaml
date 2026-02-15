@@ -1,0 +1,173 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: tokens.registry.platform.lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    crossplane.io/xrd: tokens.registry.platform.lab
+spec:
+  compositeTypeRef:
+    apiVersion: registry.platform.lab/v1alpha1
+    kind: Token
+  mode: Pipeline
+  pipeline:
+    - step: create-token
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := getCompositeResource . -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $namespace := $xr.metadata.namespace -}}
+            {{- $username := $xr.spec.username -}}
+            {{- $orgName := default "homelab" $xr.spec.orgName -}}
+            {{- $repositoryName := $xr.spec.repositoryName -}}
+            {{- $registryHost := default "git.lab" $xr.spec.registryHost -}}
+            {{- $tokenName := default (printf "registry-%s" $name) $xr.spec.tokenName -}}
+            {{- $providerConfigName := default (printf "%s-token-provider-config" $name) $xr.spec.providerConfigName -}}
+            {{- $authSecretName := $xr.spec.authSecretRef.name -}}
+            {{- $authSecretNamespace := default $namespace $xr.spec.authSecretRef.namespace -}}
+            {{- $authSecretKey := default "credentials" $xr.spec.authSecretRef.key -}}
+            {{- $secretStoreName := printf "%s-secret-store" $namespace -}}
+            {{- $mountPath := printf "platform/%s/kv" $namespace -}}
+            {{- $vaultPath := printf "%s/registry/%s" $mountPath $name -}}
+            ---
+            apiVersion: gitea.m.crossplane.io/v1beta1
+            kind: ProviderConfig
+            metadata:
+              name: {{ $providerConfigName }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: provider-config
+                gotemplating.fn.crossplane.io/ready: "True"
+            spec:
+              credentials:
+                source: Secret
+                secretRef:
+                  namespace: {{ $authSecretNamespace }}
+                  name: {{ $authSecretName }}
+                  key: {{ $authSecretKey }}
+            ---
+            apiVersion: gitea.gitea.m.crossplane.io/v1alpha1
+            kind: Token
+            metadata:
+              name: {{ $name }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: token
+            spec:
+              forProvider:
+                name: {{ $tokenName }}
+                scopes:
+            {{- range $scope := $xr.spec.scopes }}
+                  - {{ $scope | quote }}
+            {{- end }}
+              writeConnectionSecretToRef:
+                name: {{ $name }}-token-raw
+              providerConfigRef:
+                kind: ProviderConfig
+                name: {{ $providerConfigName }}
+            ---
+            apiVersion: kubernetes.m.crossplane.io/v1alpha1
+            kind: Object
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: push-secret
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: external-secrets.io/v1alpha1
+                  kind: PushSecret
+                  metadata:
+                    name: {{ $name }}-registry-push
+                    namespace: {{ $namespace }}
+                  spec:
+                    updatePolicy: Replace
+                    refreshInterval: "1h"
+                    secretStoreRefs:
+                      - kind: SecretStore
+                        name: {{ $secretStoreName }}
+                    selector:
+                      secret:
+                        name: {{ $name }}-token-raw
+                    data:
+                      - match:
+                          remoteRef:
+                            remoteKey: {{ $vaultPath }}
+                            property: password
+                          secretKey: attribute.token
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: provider-kubernetes-config
+              references:
+                - dependsOn:
+                    apiVersion: v1
+                    kind: Secret
+                    namespace: {{ $namespace }}
+                    name: {{ $name }}-token-raw
+            ---
+            apiVersion: kubernetes.m.crossplane.io/v1alpha1
+            kind: Object
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: external-secret
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: external-secrets.io/v1
+                  kind: ExternalSecret
+                  metadata:
+                    name: {{ $name }}-registry
+                    namespace: {{ $namespace }}
+                  spec:
+                    refreshInterval: "1h"
+                    secretStoreRef:
+                      kind: SecretStore
+                      name: {{ $secretStoreName }}
+                    target:
+                      name: {{ $name }}-registry
+                      creationPolicy: Owner
+                      template:
+                        type: kubernetes.io/dockerconfigjson
+                        data:
+                          .dockerconfigjson: |
+                            {
+                              "auths": {
+                                "{{ $registryHost }}/{{ $orgName }}/{{ $repositoryName }}": {
+                                  "username": "{{ $username }}",
+                                  "password": "{{ `{{ .password }}` }}"
+                                }
+                              }
+                            }
+                    data:
+                      - remoteRef:
+                          key: {{ $vaultPath }}
+                          property: password
+                        secretKey: password
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: provider-kubernetes-config
+              references:
+                - dependsOn:
+                    apiVersion: external-secrets.io/v1alpha1
+                    kind: PushSecret
+                    namespace: {{ $namespace }}
+                    name: {{ $name }}-registry-push
+            ---
+            apiVersion: registry.platform.lab/v1alpha1
+            kind: Token
+            metadata:
+              name: {{ $name }}
+            status:
+              vaultPath: {{ $vaultPath }}
+              secretName: {{ printf "%s-registry" $name }}
+              ready: true
+
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready

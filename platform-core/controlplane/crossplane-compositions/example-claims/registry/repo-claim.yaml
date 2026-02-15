@@ -1,0 +1,11 @@
+# Example: Create an app repository under homelab org
+apiVersion: registry.platform.lab/v1alpha1
+kind: Repo
+metadata:
+  name: demo-split
+  namespace: crossplane-examples
+spec:
+  registryHost: git.lab
+  orgName: homelab
+  description: "Container registry for demo-split"
+  private: true

@@ -1,0 +1,12 @@
+# Example: Add app-demo-split user to team ID 2
+#
+# Note: teamId is required by provider Membership resource.
+# You can fetch it from Team managed resource status.atProvider.id.
+apiVersion: registry.platform.lab/v1alpha1
+kind: Membership
+metadata:
+  name: app-demo-split-demo-split-registry
+  namespace: crossplane-examples
+spec:
+  username: app-demo-split
+  teamId: 3

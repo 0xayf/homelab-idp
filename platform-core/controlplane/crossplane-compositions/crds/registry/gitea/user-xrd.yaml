@@ -1,0 +1,46 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: users.registry.platform.lab
+spec:
+  group: registry.platform.lab
+  names:
+    kind: User
+    plural: users
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                username:
+                  type: string
+                  description: Username in Gitea. Defaults to metadata.name.
+                email:
+                  type: string
+                  description: Email for the user. Defaults to <username>@<namespace>.local.
+                passwordSecretName:
+                  type: string
+                  description: Secret name that contains password key.
+                  default: ""
+                passwordSecretKey:
+                  type: string
+                  description: Secret key containing password.
+                  default: password
+                providerConfigName:
+                  type: string
+                  description: ClusterProviderConfig name for provider-upjet-gitea.
+                  default: gitea-provider-config
+              required:
+                - passwordSecretName
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                  description: Whether the user is ready.

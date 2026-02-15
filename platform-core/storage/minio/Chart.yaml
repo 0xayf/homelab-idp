@@ -1,0 +1,8 @@
+apiVersion: v2
+name: minio
+description: Wrapper chart to deploy MinIO object storage.
+version: 0.1.0
+dependencies:
+  - name: minio
+    version: "17.0.21"
+    repository: "https://charts.bitnami.com/bitnami"

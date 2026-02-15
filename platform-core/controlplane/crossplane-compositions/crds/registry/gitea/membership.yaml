@@ -1,0 +1,55 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: memberships.registry.platform.lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    crossplane.io/xrd: memberships.registry.platform.lab
+spec:
+  compositeTypeRef:
+    apiVersion: registry.platform.lab/v1alpha1
+    kind: Membership
+  mode: Pipeline
+  pipeline:
+    - step: create-membership
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := getCompositeResource . -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $namespace := $xr.metadata.namespace -}}
+            {{- $username := $xr.spec.username -}}
+            {{- $teamID := int64 $xr.spec.teamId -}}
+            {{- $providerConfigName := default "gitea-provider-config" $xr.spec.providerConfigName -}}
+            ---
+            apiVersion: team.gitea.m.crossplane.io/v1alpha1
+            kind: Membership
+            metadata:
+              name: {{ $name }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: membership
+            spec:
+              forProvider:
+                teamId: {{ $teamID }}
+                username: {{ $username }}
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: {{ $providerConfigName }}
+            ---
+            apiVersion: registry.platform.lab/v1alpha1
+            kind: Membership
+            metadata:
+              name: {{ $name }}
+            status:
+              ready: true
+
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready

@@ -1,0 +1,49 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: repos.registry.platform.lab
+spec:
+  group: registry.platform.lab
+  names:
+    kind: Repo
+    plural: repos
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                orgName:
+                  type: string
+                  description: Gitea organisation name.
+                  default: homelab
+                registryHost:
+                  type: string
+                  description: Registry hostname used in status.repositoryUrl.
+                  default: git.lab
+                description:
+                  type: string
+                  description: Repository description.
+                  default: ""
+                private:
+                  type: boolean
+                  description: Whether the repository is private.
+                  default: true
+                providerConfigName:
+                  type: string
+                  description: ClusterProviderConfig name for provider-upjet-gitea.
+                  default: gitea-provider-config
+            status:
+              type: object
+              properties:
+                repositoryUrl:
+                  type: string
+                  description: Registry repository URL.
+                ready:
+                  type: boolean
+                  description: Whether the repository is ready.

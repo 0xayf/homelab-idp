@@ -1,0 +1,40 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: memberships.registry.platform.lab
+spec:
+  group: registry.platform.lab
+  names:
+    kind: Membership
+    plural: memberships
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                username:
+                  type: string
+                  description: Gitea username to add to team.
+                teamId:
+                  type: integer
+                  format: int64
+                  description: Team ID in Gitea.
+                providerConfigName:
+                  type: string
+                  description: ClusterProviderConfig name for provider-upjet-gitea.
+                  default: gitea-provider-config
+              required:
+                - username
+                - teamId
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                  description: Whether the membership is ready.

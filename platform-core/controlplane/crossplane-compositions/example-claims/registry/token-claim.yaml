@@ -1,0 +1,18 @@
+# Example: Create app token, store credentials in Vault, and project dockerconfigjson secret
+apiVersion: registry.platform.lab/v1alpha1
+kind: Token
+metadata:
+  name: app-demo-split-registry-token
+  namespace: crossplane-examples
+spec:
+  authSecretRef:
+    namespace: crossplane-examples
+    name: app-demo-split-userpass
+    key: credentials
+  username: app-demo-split
+  registryHost: git.lab
+  orgName: homelab
+  repositoryName: demo-split
+  tokenName: registry-demo-split
+  scopes:
+    - write:package

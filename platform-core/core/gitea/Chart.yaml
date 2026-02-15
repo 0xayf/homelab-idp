@@ -1,0 +1,8 @@
+apiVersion: v2
+name: gitea
+description: Wrapper chart to deploy Gitea and configure Crossplane provider integration.
+version: 0.1.0
+dependencies:
+  - name: gitea
+    version: "12.4.0"
+    repository: "https://dl.gitea.com/charts/"

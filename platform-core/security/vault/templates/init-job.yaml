@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-init-script
+  namespace: {{ .Release.Namespace }}
+data:
+  run.sh: |
+    #!/bin/sh
+    set -e
+    
+    VAULT_ADDR="http://vault-0.vault-internal:8200"
+    SECRET_NAME="init-credentials"
+    NAMESPACE="{{ .Release.Namespace }}"
+    SECRET_SHARES=3
+    SECRET_THRESHOLD=3
+
+    log() {
+      echo "==> $(date '+%Y-%m-%d %H:%M:%S') | $@"
+    }
+
+    log "--- Vault Initialiser Started ---"
+    
+    log "Installing dependencies..."
+    apk add --no-cache curl jq kubectl > /dev/null
+    log "Dependencies installed."
+
+    log "Waiting for Vault API to become available..."
+    until curl -s -o /dev/null "${VAULT_ADDR}/v1/sys/health"; do
+      log "Vault is not ready yet. Waiting..."
+      sleep 2
+    done
+    log "Vault API is ready."
+
+    # Check if Vault is initialised
+    INITIALISED=$(curl -s "${VAULT_ADDR}/v1/sys/health" | jq -r .initialized)
+
+    if [ "$INITIALISED" = "false" ]; then
+      log "Vault is not initialized. Performing first-time setup..."
+      
+      INIT_RESPONSE=$(curl -s -X PUT --data "{\"secret_shares\": ${SECRET_SHARES}, \"secret_threshold\": ${SECRET_THRESHOLD}}" "${VAULT_ADDR}/v1/sys/init")
+      
+      ROOT_TOKEN=$(echo "$INIT_RESPONSE" | jq -r .root_token)
+      UNSEAL_KEY_1=$(echo "$INIT_RESPONSE" | jq -r .keys_base64[0])
+      UNSEAL_KEY_2=$(echo "$INIT_RESPONSE" | jq -r .keys_base64[1])
+      UNSEAL_KEY_3=$(echo "$INIT_RESPONSE" | jq -r .keys_base64[2])
+
+      log "Storing unseal keys and root token in secret '${SECRET_NAME}'..."
+      kubectl create secret generic "${SECRET_NAME}" -n "${NAMESPACE}" \
+        --from-literal=root-token="$ROOT_TOKEN" \
+        --from-literal=unseal-key-1="$UNSEAL_KEY_1" \
+        --from-literal=unseal-key-2="$UNSEAL_KEY_2" \
+        --from-literal=unseal-key-3="$UNSEAL_KEY_3"
+      
+      log "Secret created."
+    fi
+
+    # Check if Vault is sealed
+    SEALED=$(curl -s "${VAULT_ADDR}/v1/sys/health" | jq -r .sealed)
+
+    if [ "$SEALED" = "true" ]; then
+      log "Vault is sealed. Unsealing now..."
+      
+      UNSEAL_KEY_1=$(kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" -o jsonpath='{.data.unseal-key-1}' | base64 -d)
+      UNSEAL_KEY_2=$(kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" -o jsonpath='{.data.unseal-key-2}' | base64 -d)
+      UNSEAL_KEY_3=$(kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" -o jsonpath='{.data.unseal-key-3}' | base64 -d)
+
+      # Unseal Vault
+      curl -s -X PUT -H "Content-Type: application/json" --data "{\"key\": \"$UNSEAL_KEY_1\"}" "${VAULT_ADDR}/v1/sys/unseal" > /dev/null
+      curl -s -X PUT -H "Content-Type: application/json" --data "{\"key\": \"$UNSEAL_KEY_2\"}" "${VAULT_ADDR}/v1/sys/unseal" > /dev/null
+      curl -s -X PUT -H "Content-Type: application/json" --data "{\"key\": \"$UNSEAL_KEY_3\"}" "${VAULT_ADDR}/v1/sys/unseal" > /dev/null
+      
+      log "Vault unsealed successfully."
+    else
+      log "Vault is already initialized and unsealed."
+    fi
+
+    log "--- Vault Initializer Finished Successfully ---"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: "vault-init-"
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      serviceAccountName: vault-init-sa
+      restartPolicy: OnFailure
+      containers:
+      - name: init
+        image: alpine:3.22.1
+        command: ["/bin/sh", "/config/run.sh"]
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: vault-init-script
+          defaultMode: 0755
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-init-sa
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-init-role
+  namespace: {{ .Release.Namespace }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-init-binding
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-init-role
+subjects:
+- kind: ServiceAccount
+  name: vault-init-sa

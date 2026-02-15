@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: provider-token-script
+  namespace: {{ .Release.Namespace }}
+data:
+  run.sh: |
+    #!/bin/sh
+    set -e
+
+    GITEA_URL="{{ .Values.gitea.baseUrl }}"
+    NAMESPACE="{{ .Release.Namespace }}"
+    ADMIN_CREDENTIALS_SECRET="gitea-admin"
+    TOKEN_SECRET="crossplane-gitea-provider-token-source"
+    TOKEN_SECRET_KEY="credentials"
+    TOKEN_NAME="crossplane-provider"
+    TOKEN_SCOPE="write:package"
+
+    log() {
+      echo "==> $(date '+%Y-%m-%d %H:%M:%S') | $@"
+    }
+
+    log "--- Provider Token Sync Script Started ---"
+
+    log "Installing dependencies..."
+    apk add --no-cache curl jq kubectl > /dev/null
+    log "Dependencies installed."
+
+    # Read admin credentials from secret
+    log "Reading admin credentials from secret $ADMIN_CREDENTIALS_SECRET..."
+    ADMIN_USERNAME=$(kubectl -n "$NAMESPACE" get secret "$ADMIN_CREDENTIALS_SECRET" \
+      -o jsonpath='{.data.username}' | base64 -d)
+    ADMIN_PASSWORD=$(kubectl -n "$NAMESPACE" get secret "$ADMIN_CREDENTIALS_SECRET" \
+      -o jsonpath='{.data.password}' | base64 -d)
+
+    if [ -z "$ADMIN_USERNAME" ] || [ -z "$ADMIN_PASSWORD" ]; then
+      log "ERROR: Failed to read admin credentials"
+      exit 1
+    fi
+    log "Admin credentials loaded."
+
+    # Resolve usable token with robust fallback behavior.
+    # Gitea returns sha1 only at creation time; list responses contain sha1="".
+    log "Resolving token for '$TOKEN_NAME'..."
+    EXISTING_TOKEN=""
+    NEED_NEW_TOKEN=false
+    TOKEN_NAME_FOR_CREATE="$TOKEN_NAME"
+
+    # First preference: reuse token from current source secret if present and valid.
+    EXISTING_CREDENTIALS_B64=$(kubectl -n "$NAMESPACE" get secret "$TOKEN_SECRET" \
+      -o "jsonpath={.data.${TOKEN_SECRET_KEY}}" 2>/dev/null || true)
+
+    if [ -n "$EXISTING_CREDENTIALS_B64" ]; then
+      EXISTING_TOKEN=$(printf '%s' "$EXISTING_CREDENTIALS_B64" | base64 -d | jq -r '.token // empty' 2>/dev/null || true)
+
+      if [ -n "$EXISTING_TOKEN" ]; then
+        TEST_RESPONSE=$(curl -s -H "Authorization: token $EXISTING_TOKEN" \
+          "$GITEA_URL/api/v1/user" || true)
+
+        if echo "$TEST_RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
+          log "Reusing existing valid token from secret $TOKEN_SECRET"
+        else
+          log "Stored token in $TOKEN_SECRET is invalid - will mint a new token"
+          EXISTING_TOKEN=""
+        fi
+      fi
+    fi
+
+    if [ -z "$EXISTING_TOKEN" ]; then
+      TOKENS_RESPONSE=$(curl -s -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" \
+        "$GITEA_URL/api/v1/users/$ADMIN_USERNAME/tokens" || true)
+
+      if echo "$TOKENS_RESPONSE" | jq -e '.' >/dev/null 2>&1; then
+        EXISTING_TOKEN_ID=$(echo "$TOKENS_RESPONSE" | jq -r ".[] | select(.name == \"$TOKEN_NAME\") | .id" 2>/dev/null | head -n1 || true)
+
+        if [ -n "$EXISTING_TOKEN_ID" ] && [ "$EXISTING_TOKEN_ID" != "null" ]; then
+          log "Token '$TOKEN_NAME' exists in Gitea (id=$EXISTING_TOKEN_ID) but value is not recoverable from list API"
+          DELETE_HTTP_CODE=$(curl -s -o /tmp/provider-token-delete.json -w "%{http_code}" \
+            -X DELETE -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" \
+            "$GITEA_URL/api/v1/users/$ADMIN_USERNAME/tokens/$EXISTING_TOKEN_ID" || true)
+
+          if [ "$DELETE_HTTP_CODE" -ge 200 ] && [ "$DELETE_HTTP_CODE" -lt 300 ]; then
+            log "Deleted stale token '$TOKEN_NAME' (id=$EXISTING_TOKEN_ID) before recreation"
+          else
+            TOKEN_NAME_FOR_CREATE="${TOKEN_NAME}-$(date +%s)"
+            log "Warning: could not delete stale token (HTTP $DELETE_HTTP_CODE); creating token '$TOKEN_NAME_FOR_CREATE' instead"
+          fi
+        else
+          log "No token named '$TOKEN_NAME' found in Gitea - creating a new one"
+        fi
+      else
+        log "Failed to list tokens - attempting direct token creation"
+      fi
+
+      NEED_NEW_TOKEN=true
+    fi
+
+    # Create new token if needed
+    if [ "$NEED_NEW_TOKEN" = true ]; then
+      log "Creating new token '$TOKEN_NAME_FOR_CREATE' with scope '$TOKEN_SCOPE'..."
+      CREATE_RESPONSE=$(curl -s -X POST -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"$TOKEN_NAME_FOR_CREATE\",\"scopes\":[\"$TOKEN_SCOPE\"]}" \
+        "$GITEA_URL/api/v1/users/$ADMIN_USERNAME/tokens")
+
+      EXISTING_TOKEN=$(echo "$CREATE_RESPONSE" | jq -r '.sha1' 2>/dev/null || echo "")
+
+      if [ -z "$EXISTING_TOKEN" ] || [ "$EXISTING_TOKEN" = "null" ]; then
+        log "ERROR: Failed to create token"
+        echo "$CREATE_RESPONSE"
+        exit 1
+      fi
+      log "Token created successfully"
+    fi
+
+    # Store provider credentials payload in Kubernetes secret
+    PROVIDER_CREDENTIALS=$(jq -cn --arg base_url "$GITEA_URL" --arg token "$EXISTING_TOKEN" '{base_url:$base_url,token:$token}')
+
+    log "Storing provider credentials in secret $TOKEN_SECRET key $TOKEN_SECRET_KEY..."
+    kubectl apply -f - <<ENDSECRET
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: $TOKEN_SECRET
+      namespace: $NAMESPACE
+      labels:
+        app.kubernetes.io/managed-by: provider-token-job
+    type: Opaque
+    stringData:
+      $TOKEN_SECRET_KEY: '$PROVIDER_CREDENTIALS'
+    ENDSECRET
+
+    log "--- Provider Token Sync Script Finished Successfully ---"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provider-token-sa
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: provider-token-role
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: provider-token-binding
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+subjects:
+  - kind: ServiceAccount
+    name: provider-token-sa
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: provider-token-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: provider-token-sync
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  template:
+    spec:
+      serviceAccountName: provider-token-sa
+      restartPolicy: OnFailure
+      containers:
+      - name: token-creator
+        image: alpine:3.22.1
+        command: ["/bin/sh", "/config/run.sh"]
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: provider-token-script
+          defaultMode: 0755

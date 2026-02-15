@@ -1,0 +1,75 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: tokens.registry.platform.lab
+spec:
+  group: registry.platform.lab
+  names:
+    kind: Token
+    plural: tokens
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                authSecretRef:
+                  type: object
+                  description: Secret reference with provider credentials JSON for username/password auth.
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
+                    key:
+                      type: string
+                      default: credentials
+                  required:
+                    - name
+                username:
+                  type: string
+                  description: Username used in projected registry credentials.
+                orgName:
+                  type: string
+                  description: Gitea organisation name for registry path.
+                  default: homelab
+                repositoryName:
+                  type: string
+                  description: Repository name for registry path.
+                registryHost:
+                  type: string
+                  description: Registry hostname used in generated dockerconfigjson auths key.
+                  default: git.lab
+                tokenName:
+                  type: string
+                  description: Access token name in Gitea.
+                scopes:
+                  type: array
+                  description: Token scopes.
+                  items:
+                    type: string
+                providerConfigName:
+                  type: string
+                  description: Namespaced ProviderConfig name used by Token MR.
+              required:
+                - authSecretRef
+                - username
+                - repositoryName
+                - scopes
+            status:
+              type: object
+              properties:
+                vaultPath:
+                  type: string
+                  description: Full Vault path where registry credentials are stored.
+                secretName:
+                  type: string
+                  description: Projected Kubernetes dockerconfigjson secret name.
+                ready:
+                  type: boolean
+                  description: Whether token projection is ready.

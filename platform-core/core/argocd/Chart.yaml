@@ -1,0 +1,8 @@
+apiVersion: v2
+name: argocd
+description: Wrapper chart to deploy Argo CD and the platform ApplicationSet for self-managed GitOps.
+version: 0.1.0
+dependencies:
+  - name: argo-cd
+    version: "9.2.3"
+    repository: "https://argoproj.github.io/argo-helm"

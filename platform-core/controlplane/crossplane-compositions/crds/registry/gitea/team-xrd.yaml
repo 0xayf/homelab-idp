@@ -1,0 +1,46 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: teams.registry.platform.lab
+spec:
+  group: registry.platform.lab
+  names:
+    kind: Team
+    plural: teams
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                orgName:
+                  type: string
+                  description: Gitea organisation name.
+                  default: homelab
+                repoName:
+                  type: string
+                  description: Repository name this team should access.
+                permission:
+                  type: string
+                  description: Team repository permission.
+                  default: write
+                providerConfigName:
+                  type: string
+                  description: ClusterProviderConfig name for provider-upjet-gitea.
+                  default: gitea-provider-config
+              required:
+                - repoName
+            status:
+              type: object
+              properties:
+                teamId:
+                  type: string
+                  description: Team ID observed from Gitea.
+                ready:
+                  type: boolean
+                  description: Whether the team is ready.

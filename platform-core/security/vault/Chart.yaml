@@ -1,0 +1,8 @@
+apiVersion: v2
+name: vault
+description: Wrapper chart to deploy HashiCorp Vault and bootstrap platform security integrations.
+version: 0.1.0
+dependencies:
+  - name: vault
+    version: "0.31.0"
+    repository: "https://helm.releases.hashicorp.com"

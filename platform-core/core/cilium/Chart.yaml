@@ -1,0 +1,8 @@
+apiVersion: v2
+name: cilium
+description: Wrapper chart to deploy Cilium CNI for platform networking and security.
+version: 0.1.0
+dependencies:
+  - name: cilium
+    version: "1.18.5"
+    repository: "https://helm.cilium.io/"

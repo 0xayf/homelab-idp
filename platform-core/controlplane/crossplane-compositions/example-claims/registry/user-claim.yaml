@@ -1,0 +1,11 @@
+# Example: Create app service user from UserPass-generated password secret
+apiVersion: registry.platform.lab/v1alpha1
+kind: User
+metadata:
+  name: app-demo-split
+  namespace: crossplane-examples
+spec:
+  username: app-demo-split
+  email: app-demo-split@crossplane-examples.local
+  passwordSecretName: app-demo-split-userpass
+  passwordSecretKey: password

@@ -1,0 +1,46 @@
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  name: gitea-provider-token-push
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  refreshInterval: 1h
+  updatePolicy: Replace
+  secretStoreRefs:
+    - name: gitea-secret-store
+      kind: SecretStore
+  selector:
+    secret:
+      name: "crossplane-gitea-provider-token-source"
+  data:
+    - match:
+        secretKey: "credentials"
+        remoteRef:
+          remoteKey: "crossplane-gitea-provider-token"
+          property: "credentials"
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: "crossplane-gitea-provider-token"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gitea-secret-store
+    kind: SecretStore
+  target:
+    name: "crossplane-gitea-provider-token"
+    creationPolicy: Owner
+  data:
+    - secretKey: "credentials"
+      remoteRef:
+        key: "crossplane-gitea-provider-token"
+        property: "credentials"

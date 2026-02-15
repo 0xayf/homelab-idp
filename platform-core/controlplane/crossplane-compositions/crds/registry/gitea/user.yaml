@@ -1,0 +1,64 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: users.registry.platform.lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    crossplane.io/xrd: users.registry.platform.lab
+spec:
+  compositeTypeRef:
+    apiVersion: registry.platform.lab/v1alpha1
+    kind: User
+  mode: Pipeline
+  pipeline:
+    - step: create-user
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := getCompositeResource . -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $namespace := $xr.metadata.namespace -}}
+            {{- $username := default $name $xr.spec.username -}}
+            {{- $email := default (printf "%s@%s.local" $username $namespace) $xr.spec.email -}}
+            {{- $passwordSecretName := $xr.spec.passwordSecretName -}}
+            {{- $passwordSecretKey := default "password" $xr.spec.passwordSecretKey -}}
+            {{- $providerConfigName := default "gitea-provider-config" $xr.spec.providerConfigName -}}
+            ---
+            apiVersion: gitea.gitea.m.crossplane.io/v1alpha1
+            kind: User
+            metadata:
+              name: {{ $username }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: user
+            spec:
+              forProvider:
+                username: {{ $username }}
+                loginName: {{ $username }}
+                email: {{ $email | quote }}
+                passwordSecretRef:
+                  name: {{ $passwordSecretName }}
+                  key: {{ $passwordSecretKey }}
+                admin: false
+                mustChangePassword: false
+                prohibitLogin: false
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: {{ $providerConfigName }}
+            ---
+            apiVersion: registry.platform.lab/v1alpha1
+            kind: User
+            metadata:
+              name: {{ $name }}
+            status:
+              ready: true
+
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready
