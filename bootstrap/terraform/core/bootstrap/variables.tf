@@ -44,4 +44,3 @@ variable "argocd_namespace" {
   description = "The namespace where ArgoCD is deployed."
   type        = string
 }
-

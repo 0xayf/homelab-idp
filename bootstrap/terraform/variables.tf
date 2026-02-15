@@ -36,4 +36,3 @@ variable "gitea_hostname" {
   description = "The fully qualified domain name for Gitea."
   type        = string
 }
-
