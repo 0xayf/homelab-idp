@@ -1,51 +1,51 @@
 # Example: Request a PostgreSQL database for your application
 #
+# Prerequisites:
+# - Vault onboarding resources must exist in the namespace:
+#   KVMount, ServiceAccount, SecretStore, Policy, AuthRole
+#   (see example-claims/secrets/vault-onboarding-claim.yaml)
+#
 # This claim creates:
+# - A UserPass claim that generates credentials and stores them in Vault
+# - A <databaseName>-db secret with keys: username, password, uri
 # - A single-instance CloudNative-PG cluster in your namespace
-# - A secure password stored in Vault at platform/database/<databaseName>
-# - An ExternalSecret that syncs credentials to your namespace as <databaseName>-db
 #
 # Usage in your application:
-#   - Mount the secret <databaseName>-db with keys: host, port, username, password, database, uri
-#   - Or use environment variables from the secret
+#   env:
+#     - name: DATABASE_URL
+#       valueFrom:
+#         secretKeyRef:
+#           name: <databaseName>-db
+#           key: uri
 #
+# Note:
+# - The uri value URL-encodes the password (for example, @ becomes %40).
+# - Pass uri directly to a PostgreSQL client/driver as DATABASE_URL.
+#   The driver decodes it during connection parsing.
+
 # Minimal example (uses all defaults):
-apiVersion: database.platform.local/v1alpha1
-kind: PostgresDatabase
+apiVersion: storage.platform.lab/v1alpha1
+kind: Postgres
 metadata:
   name: myapp-db
-  namespace: myapp
+  namespace: crossplane-examples
 spec:
   databaseName: myapp
-
 ---
 # Full example with all options:
-apiVersion: database.platform.local/v1alpha1
-kind: PostgresDatabase
+apiVersion: storage.platform.lab/v1alpha1
+kind: Postgres
 metadata:
   name: myapp-db-full
-  namespace: myapp
+  namespace: crossplane-examples
 spec:
   # Required: Name of the database (also used for username)
-  databaseName: myapp
+  databaseName: myapp-full
 
-  # Optional: Persistent volume size
-  # Default: 1Gi
+  # Optional: Persistent volume size (default: 1Gi)
   storageSize: "5Gi"
-
-  # Optional: PostgreSQL major version
-  # Default: "17"
-  postgresVersion: "16"
 
   # Optional: Resource limits
   resources:
     cpu: "1"
     memory: "1Gi"
-
-  # Optional: Enable PgBouncer connection pooler
-  # Default: false
-  enablePooler: true
-
-  # Connection secret will be written to: myapp-db-full-connection-secret
-  writeConnectionSecretToRef:
-    name: myapp-db-full-connection-secret

@@ -101,6 +101,8 @@ spec:
                             remoteKey: {{ $vaultPath }}
                             property: password
                           secretKey: attribute.token
+              readiness:
+                policy: DeriveFromObject
               providerConfigRef:
                 kind: ClusterProviderConfig
                 name: provider-kubernetes-config
@@ -149,6 +151,8 @@ spec:
                           key: {{ $vaultPath }}
                           property: password
                         secretKey: password
+              readiness:
+                policy: DeriveFromObject
               providerConfigRef:
                 kind: ClusterProviderConfig
                 name: provider-kubernetes-config
