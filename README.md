@@ -183,23 +183,31 @@ All applications should reach `Synced` and `Healthy` status.
 
 ```yaml
 cluster:
-  server_ip: 10.0.0.10           # Target server IP
-
+  server_ip: 10.0.0.10                      # Target server IP
 network:
-  metallb_ip_range: 10.0.0.20-10.0.0.30  # LoadBalancer IP pool
-
+  metallb_ip_range: 10.0.0.20-10.0.0.21     # LoadBalancer IP pool
+  ingress_nginx_loadbalancer_ip: 10.0.0.20  # Ingress VIP (HTTP/HTTPS)
+  gitea_ssh_loadbalancer_ip: 10.0.0.21      # Dedicated Gitea SSH VIP
+  # Optional hardening: restrict Gitea SSH source CIDRs.
+  # Delete this block to allow SSH from all source addresses.
+  gitea_ssh_allowed_sources:
+    - 10.0.0.0/24
+    - 10.0.10.100/32
 ingress:
   base_domain: lab               # Base domain for services
   prefixes:
     argocd: cd                   # cd.lab
     gitea: git                   # git.lab
+    gitea_ssh: git-ssh           # git-ssh.lab
     vault: secrets               # secrets.lab
     minio: storage               # storage.lab
     minio_api: s3                # s3.lab
 ```
 
+For security, keep `network.gitea_ssh_allowed_sources` and scope it to trusted CIDRs. If you do not want source-based restrictions, delete that block from `config/homelab.yml`; `scripts/render-config.py` will still work and render an unrestricted SSH service.
+
 `render-config.py` uses these values to:
-- Generate `terraform.tfvars` with `base_domain`, `argocd_hostname`, and `gitea_hostname`
+- Generate `terraform.tfvars` with `base_domain`, `argocd_hostname`, `gitea_hostname`, `gitea_ssh_hostname`, `gitea_ssh_loadbalancer_ip`, and `gitea_ssh_allowed_sources`
 - Generate Ansible `inventory/hosts` with `server_ip`
 - Replace `__PLACEHOLDER__` strings in `platform-core/**/values.yaml` with computed hostnames and IPs
 
@@ -207,17 +215,18 @@ ingress:
 
 ### Configure DNS
 
-Platform services are exposed via ingress using hostnames derived from `config/homelab.yml`. Your local DNS must resolve these hostnames to the MetalLB LoadBalancer IP (the first IP in `network.metallb_ip_range`).
+Platform hostnames are derived from `config/homelab.yml`. Ingress hosts should resolve to `network.ingress_nginx_loadbalancer_ip`, and the Gitea SSH host should resolve to `network.gitea_ssh_loadbalancer_ip`.
 
-| Hostname | Service |
-|----------|---------|
-| `cd.lab` | ArgoCD |
-| `git.lab` | Gitea |
-| `secrets.lab` | Vault |
-| `storage.lab` | MinIO Console |
-| `s3.lab` | MinIO API |
+| Hostname | Service | IP |
+|----------|---------|----|
+| `cd.lab` | ArgoCD | `network.ingress_nginx_loadbalancer_ip` |
+| `git.lab` | Gitea UI/API | `network.ingress_nginx_loadbalancer_ip` |
+| `secrets.lab` | Vault | `network.ingress_nginx_loadbalancer_ip` |
+| `storage.lab` | MinIO Console | `network.ingress_nginx_loadbalancer_ip` |
+| `s3.lab` | MinIO API | `network.ingress_nginx_loadbalancer_ip` |
+| `git-ssh.lab` | Gitea SSH clone endpoint | `network.gitea_ssh_loadbalancer_ip` |
 
-All entries should point to your LoadBalancer IP (e.g., `10.0.0.20`).
+Example with defaults: ingress hosts -> `10.0.0.20`, `git-ssh.lab` -> `10.0.0.21`.
 
 **OPNsense/Unbound**: Configure in **Services > Unbound DNS > Host Overrides**.
 

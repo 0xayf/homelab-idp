@@ -36,3 +36,19 @@ variable "gitea_hostname" {
   description = "The fully qualified domain name for Gitea."
   type        = string
 }
+
+variable "gitea_ssh_hostname" {
+  description = "The fully qualified domain name for the Gitea SSH endpoint."
+  type        = string
+}
+
+variable "gitea_ssh_loadbalancer_ip" {
+  description = "The dedicated LoadBalancer IP for the Gitea SSH service."
+  type        = string
+}
+
+variable "gitea_ssh_allowed_sources" {
+  description = "Optional source CIDR allowlist for the Gitea SSH LoadBalancer service."
+  type        = list(string)
+  default     = []
+}

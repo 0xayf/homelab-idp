@@ -1,6 +1,14 @@
 gitea:
   baseUrl: http://gitea-http.gitea.svc.cluster.local:3000
 
+  service:
+    ssh:
+      type: LoadBalancer
+      loadBalancerIP: __GITEA_SSH_LOADBALANCER_IP__
+      port: 22
+      externalTrafficPolicy: Local
+      loadBalancerSourceRanges: __GITEA_SSH_SOURCE_RANGES__
+
   ingress:
     enabled: true
     className: nginx
@@ -22,8 +30,10 @@ gitea:
     config:
       server:
         DOMAIN: __GITEA_HOSTNAME__
-        SSH_DOMAIN: __GITEA_HOSTNAME__
+        SSH_DOMAIN: __GITEA_SSH_HOSTNAME__
         ROOT_URL: https://__GITEA_HOSTNAME__/
+        SSH_PORT: 22
+        SSH_LISTEN_PORT: 2222
 
   postgresql:
     enabled: true
