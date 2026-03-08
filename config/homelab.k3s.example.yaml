@@ -1,14 +1,20 @@
 cluster:
   server_ip: 10.0.0.10
+
+storage:
+  # k3s local-path-provisioner default class name.
+  default_class: local-path
+
 network:
-  metallb_ip_range: 10.0.0.20-10.0.0.21
+  metallb_ip_range: 10.0.0.20-10.0.0.30
   ingress_nginx_loadbalancer_ip: 10.0.0.20
   gitea_ssh_loadbalancer_ip: 10.0.0.21
-  # Optional hardening: restrict Gitea SSH source CIDRs.
-  # Delete this block to allow SSH from all source addresses.
+
+  # Optional hardening for Gitea SSH. Delete block to allow all sources.
   gitea_ssh_allowed_sources:
     - 10.0.0.0/24
-    - 10.0.10.100/32
+    - 10.0.10.0/24
+
 ingress:
   base_domain: lab
   prefixes:

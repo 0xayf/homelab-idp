@@ -14,6 +14,7 @@ except ImportError:
     sys.exit(1)
 
 PLATFORM_CORE_PATCHES: dict[str, list[str]] = {
+    "__DEFAULT_STORAGE_CLASS__": ["storage", "default_class"],
     "__METALLB_IP_RANGE__": ["network", "metallb_ip_range"],
     "__INGRESS_NGINX_LOADBALANCER_IP__": ["network", "ingress_nginx_loadbalancer_ip"],
     "__ARGOCD_HOSTNAME__": ["ingress", "prefixes", "argocd"],
@@ -28,6 +29,10 @@ PLATFORM_CORE_PATCHES: dict[str, list[str]] = {
 
 LIST_PLACEHOLDER_DEFAULTS: dict[str, list[str]] = {
     "__GITEA_SSH_SOURCE_RANGES__": [],
+}
+
+STRING_PLACEHOLDER_DEFAULTS: dict[str, str] = {
+    "__DEFAULT_STORAGE_CLASS__": "local-path",
 }
 
 
@@ -59,6 +64,19 @@ def get_optional_list(data: dict, path: list[str], default: list[str]) -> list[s
     return value
 
 
+def get_optional_string(data: dict, path: list[str], default: str) -> str:
+    dotted = ".".join(path)
+    try:
+        value = reduce(lambda d, k: d[k], path, data)
+    except (KeyError, TypeError):
+        return default
+
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Config value must be a non-empty string: {dotted}")
+
+    return value
+
+
 def build_hostname(prefix: str, base_domain: str) -> str:
     return f"{prefix}.{base_domain}" if prefix else base_domain
 
@@ -68,6 +86,9 @@ def resolve_value(placeholder: str, config: dict, base_domain: str) -> str:
 
     if placeholder in LIST_PLACEHOLDER_DEFAULTS:
         return json.dumps(get_optional_list(config, path, LIST_PLACEHOLDER_DEFAULTS[placeholder]))
+
+    if placeholder in STRING_PLACEHOLDER_DEFAULTS:
+        return get_optional_string(config, path, STRING_PLACEHOLDER_DEFAULTS[placeholder])
 
     raw = get_required(config, path)
     if path[:2] == ["ingress", "prefixes"]:
@@ -94,8 +115,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--config",
-        default="config/homelab.yml",
-        help="path to homelab config YAML (default: config/homelab.yml)",
+        default="config/homelab.yaml",
+        help="path to homelab config YAML (default: config/homelab.yaml)",
     )
     args = parser.parse_args()
 

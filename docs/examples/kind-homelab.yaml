@@ -1,0 +1,10 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: homelab
+networking:
+  disableDefaultCNI: true
+  podSubnet: "10.245.0.0/16"
+  serviceSubnet: "10.246.0.0/16"
+nodes:
+- role: control-plane
+- role: worker

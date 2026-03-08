@@ -8,7 +8,7 @@ vault:
     dataStorage:
       enabled: true
       size: 1Gi
-      storageClass: local-path
+      storageClass: __DEFAULT_STORAGE_CLASS__
   
   injector:
     enabled: false

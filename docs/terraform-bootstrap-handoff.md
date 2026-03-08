@@ -2,6 +2,11 @@
 
 The bootstrap module (`bootstrap/terraform/core/bootstrap/`) is the final step of `terraform apply`. It runs a shell script via `local-exec` that connects Gitea and ArgoCD, then hands ownership of the entire platform to ArgoCD.
 
+For full install runbooks, see:
+
+- `docs/install-kind.md` (local validation)
+- `docs/install-k3s.md` (recommended real deployment)
+
 ## How It Works
 
 Terraform deploys three Helm releases — Cilium, Gitea, and ArgoCD — then invokes `bootstrap.sh` as a `terraform_data` resource with a `local-exec` provisioner. The script runs on your local machine (not in the cluster) and communicates with Gitea via `kubectl port-forward`.
@@ -56,7 +61,7 @@ The port-forward is cleaned up automatically when the script exits (via `trap`).
 ## Configuration Flow
 
 ```
-config/homelab.yml
+config/homelab.yaml
         │
         v
 render-config.py ──> bootstrap/terraform/terraform.tfvars (base_domain, argocd_hostname, gitea_hostname, gitea_ssh_hostname, gitea_ssh_loadbalancer_ip, gitea_ssh_allowed_sources)

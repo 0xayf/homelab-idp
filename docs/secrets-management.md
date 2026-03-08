@@ -152,7 +152,7 @@ Vault is deployed as a wrapper Helm chart located at `platform-core/security/vau
 Key decisions:
 - **Standalone mode** — single-node k3s cluster, so no HA.
 - **Injector disabled** — secrets are delivered via ESO, not sidecar injection.
-- **`local-path` storage class** — k3s default, backed by node-local disk.
+- **Configurable storage class** — rendered from `storage.default_class` (`local-path` on k3s, `standard` on kind).
 - **UI enabled** at `secrets.lab` — accessible via ingress-nginx with TLS from cert-manager (`lab-ca-issuer`).
 
 ### Bootstrap Sequence

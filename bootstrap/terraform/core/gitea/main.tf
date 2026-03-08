@@ -5,6 +5,7 @@ resource "helm_release" "gitea" {
   version          = var.gitea_chart_version
   create_namespace = true
   namespace        = var.namespace
+  wait             = false
 
   values = [
     templatefile("${path.module}/values.yaml", {
