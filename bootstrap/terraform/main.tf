@@ -5,9 +5,12 @@ module "cilium" {
 module "gitea" {
   source = "./core/gitea"
 
-  hostname       = var.gitea_hostname
-  admin_username = "admin"
-  admin_email    = "admin@${var.base_domain}"
+  hostname            = var.gitea_hostname
+  ssh_hostname        = var.gitea_ssh_hostname
+  ssh_loadbalancer_ip = var.gitea_ssh_loadbalancer_ip
+  ssh_allowed_sources = var.gitea_ssh_allowed_sources
+  admin_username      = "admin"
+  admin_email         = "admin@${var.base_domain}"
 
   depends_on = [module.cilium]
 }

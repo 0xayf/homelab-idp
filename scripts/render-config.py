@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from functools import reduce
 from pathlib import Path
@@ -13,12 +14,25 @@ except ImportError:
     sys.exit(1)
 
 PLATFORM_CORE_PATCHES: dict[str, list[str]] = {
+    "__DEFAULT_STORAGE_CLASS__": ["storage", "default_class"],
     "__METALLB_IP_RANGE__": ["network", "metallb_ip_range"],
+    "__INGRESS_NGINX_LOADBALANCER_IP__": ["network", "ingress_nginx_loadbalancer_ip"],
     "__ARGOCD_HOSTNAME__": ["ingress", "prefixes", "argocd"],
     "__GITEA_HOSTNAME__": ["ingress", "prefixes", "gitea"],
+    "__GITEA_SSH_HOSTNAME__": ["ingress", "prefixes", "gitea_ssh"],
+    "__GITEA_SSH_LOADBALANCER_IP__": ["network", "gitea_ssh_loadbalancer_ip"],
+    "__GITEA_SSH_SOURCE_RANGES__": ["network", "gitea_ssh_allowed_sources"],
     "__VAULT_HOSTNAME__": ["ingress", "prefixes", "vault"],
     "__MINIO_HOSTNAME__": ["ingress", "prefixes", "minio"],
     "__MINIO_API_HOSTNAME__": ["ingress", "prefixes", "minio_api"],
+}
+
+LIST_PLACEHOLDER_DEFAULTS: dict[str, list[str]] = {
+    "__GITEA_SSH_SOURCE_RANGES__": [],
+}
+
+STRING_PLACEHOLDER_DEFAULTS: dict[str, str] = {
+    "__DEFAULT_STORAGE_CLASS__": "local-path",
 }
 
 
@@ -34,12 +48,48 @@ def get_required(data: dict, path: list[str]) -> str:
     return value
 
 
+def get_optional_list(data: dict, path: list[str], default: list[str]) -> list[str]:
+    dotted = ".".join(path)
+    try:
+        value = reduce(lambda d, k: d[k], path, data)
+    except (KeyError, TypeError):
+        return default
+
+    if not isinstance(value, list):
+        raise ValueError(f"Config value must be a list: {dotted}")
+
+    if not all(isinstance(item, str) and item for item in value):
+        raise ValueError(f"Config list entries must be non-empty strings: {dotted}")
+
+    return value
+
+
+def get_optional_string(data: dict, path: list[str], default: str) -> str:
+    dotted = ".".join(path)
+    try:
+        value = reduce(lambda d, k: d[k], path, data)
+    except (KeyError, TypeError):
+        return default
+
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Config value must be a non-empty string: {dotted}")
+
+    return value
+
+
 def build_hostname(prefix: str, base_domain: str) -> str:
     return f"{prefix}.{base_domain}" if prefix else base_domain
 
 
 def resolve_value(placeholder: str, config: dict, base_domain: str) -> str:
     path = PLATFORM_CORE_PATCHES[placeholder]
+
+    if placeholder in LIST_PLACEHOLDER_DEFAULTS:
+        return json.dumps(get_optional_list(config, path, LIST_PLACEHOLDER_DEFAULTS[placeholder]))
+
+    if placeholder in STRING_PLACEHOLDER_DEFAULTS:
+        return get_optional_string(config, path, STRING_PLACEHOLDER_DEFAULTS[placeholder])
+
     raw = get_required(config, path)
     if path[:2] == ["ingress", "prefixes"]:
         return build_hostname(raw, base_domain)
@@ -65,8 +115,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--config",
-        default="config/homelab.yml",
-        help="path to homelab config YAML (default: config/homelab.yml)",
+        default="config/homelab.yaml",
+        help="path to homelab config YAML (default: config/homelab.yaml)",
     )
     args = parser.parse_args()
 
@@ -91,6 +141,9 @@ def main() -> int:
 
     argocd_hostname = replacements["__ARGOCD_HOSTNAME__"]
     gitea_hostname = replacements["__GITEA_HOSTNAME__"]
+    gitea_ssh_hostname = replacements["__GITEA_SSH_HOSTNAME__"]
+    gitea_ssh_loadbalancer_ip = replacements["__GITEA_SSH_LOADBALANCER_IP__"]
+    gitea_ssh_allowed_sources = replacements["__GITEA_SSH_SOURCE_RANGES__"]
 
     inventory_path = repo_root / "bootstrap/ansible/inventory/hosts"
     inventory_path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +155,9 @@ def main() -> int:
         f'base_domain = "{base_domain}"',
         f'argocd_hostname = "{argocd_hostname}"',
         f'gitea_hostname = "{gitea_hostname}"',
+        f'gitea_ssh_hostname = "{gitea_ssh_hostname}"',
+        f'gitea_ssh_loadbalancer_ip = "{gitea_ssh_loadbalancer_ip}"',
+        f"gitea_ssh_allowed_sources = {gitea_ssh_allowed_sources}",
     ]
     tfvars_path.write_text("\n".join(tfvars_lines) + "\n")
 

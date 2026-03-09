@@ -18,7 +18,7 @@ minio:
   persistence:
     enabled: true
     size: 10Gi
-    storageClass: local-path
+    storageClass: __DEFAULT_STORAGE_CLASS__
   ingress:
     enabled: true
     hostname: __MINIO_API_HOSTNAME__

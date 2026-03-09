@@ -1,10 +1,15 @@
-# Ansible Galaxy Collections (ubuntu + k3s)
+# Ansible Provisioning (Ubuntu + k3s)
+
+Use this guide for detailed Ansible operations.
+
+- End-to-end recommended install path: `docs/install-k3s.md`
+- Local disposable install path: `docs/install-kind.md`
 
 This guide documents the Ansible playbooks and local collections used to provision
 a single-node k3s cluster.
 
 Implementation files live in `bootstrap/ansible/`. Inventory is generated from
-`config/homelab.yml` via `scripts/render-config.py`.
+`config/homelab.yaml` via `scripts/render-config.py`.
 
 ## Install Ansible
 ```bash
@@ -60,7 +65,7 @@ The `homelab.ubuntu.create_account` role supports creating two types of accounts
 
 ## Modify Files
 
-- `bootstrap/ansible/inventory/hosts` - generated from `config/homelab.yml`.
+- `bootstrap/ansible/inventory/hosts` - generated from `config/homelab.yaml`.
 - `bootstrap/ansible/ansible.cfg` - uncomment `remote_user` and `private_key_file` if you want defaults,
   or pass them via CLI flags (`-u <user>`, `--private-key <path>`).
 - `bootstrap/ansible/playbooks/create_account.yml` - account name, SSH key path, and password env var.

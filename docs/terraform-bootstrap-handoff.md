@@ -2,6 +2,11 @@
 
 The bootstrap module (`bootstrap/terraform/core/bootstrap/`) is the final step of `terraform apply`. It runs a shell script via `local-exec` that connects Gitea and ArgoCD, then hands ownership of the entire platform to ArgoCD.
 
+For full install runbooks, see:
+
+- `docs/install-kind.md` (local validation)
+- `docs/install-k3s.md` (recommended real deployment)
+
 ## How It Works
 
 Terraform deploys three Helm releases — Cilium, Gitea, and ArgoCD — then invokes `bootstrap.sh` as a `terraform_data` resource with a `local-exec` provisioner. The script runs on your local machine (not in the cluster) and communicates with Gitea via `kubectl port-forward`.
@@ -41,6 +46,8 @@ Once the ApplicationSet is applied, ArgoCD begins deploying every Helm chart in 
 
 ArgoCD's sync policy (`selfHeal: true`) means it will reconcile any drift. Since the Helm chart values in `platform-core` match what Terraform deployed, the initial sync should show no changes. From this point forward, ArgoCD owns all resources.
 
+For services that depend on controllers not present during Terraform bootstrap (for example, Gitea SSH as `type: LoadBalancer` before MetalLB exists), Kubernetes accepts the Service and keeps it pending. Once ArgoCD deploys the required controller, reconciliation converges and the Service receives its external IP.
+
 ### What happens to Terraform's Helm releases?
 
 Terraform created Helm releases for Cilium, Gitea, and ArgoCD during bootstrap. ArgoCD then deploys the same applications from `platform-core`. ArgoCD adopts the existing resources because the release names and namespaces match. Terraform's state becomes irrelevant — it is never applied again.
@@ -54,10 +61,10 @@ The port-forward is cleaned up automatically when the script exits (via `trap`).
 ## Configuration Flow
 
 ```
-config/homelab.yml
+config/homelab.yaml
         │
         v
-render-config.py ──> bootstrap/terraform/terraform.tfvars (base_domain, argocd_hostname, gitea_hostname)
+render-config.py ──> bootstrap/terraform/terraform.tfvars (base_domain, argocd_hostname, gitea_hostname, gitea_ssh_hostname, gitea_ssh_loadbalancer_ip, gitea_ssh_allowed_sources)
         │        ──> bootstrap/ansible/inventory/hosts (server_ip)
         │        ──> platform-core/**/values.yaml (replaces __PLACEHOLDER__ strings)
         │

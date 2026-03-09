@@ -2,3 +2,4 @@ ingress-nginx:
   controller:
     service:
       type: LoadBalancer
+      loadBalancerIP: __INGRESS_NGINX_LOADBALANCER_IP__

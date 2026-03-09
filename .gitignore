@@ -39,8 +39,10 @@ override.tf.json
 terraform.rc
 
 # Local homelab config
-config/homelab.yml
+config/homelab.yaml
 bootstrap/ansible/inventory/hosts
+
+__pycache__/
 
 *.crt
 AGENTS.md
