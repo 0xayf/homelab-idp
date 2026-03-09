@@ -6,7 +6,7 @@ storage:
   default_class: local-path
 
 network:
-  metallb_ip_range: 10.0.0.20-10.0.0.30
+  metallb_ip_range: 10.0.0.20-10.0.0.21
   ingress_nginx_loadbalancer_ip: 10.0.0.20
   gitea_ssh_loadbalancer_ip: 10.0.0.21
 

@@ -8,7 +8,7 @@ storage:
 
 network:
   # These values must be in your kind network subnet.
-  metallb_ip_range: 10.89.0.20-10.89.0.30
+  metallb_ip_range: 10.89.0.20-10.89.0.21
   ingress_nginx_loadbalancer_ip: 10.89.0.20
   gitea_ssh_loadbalancer_ip: 10.89.0.21
 

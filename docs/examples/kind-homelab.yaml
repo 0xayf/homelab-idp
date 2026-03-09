@@ -7,4 +7,3 @@ networking:
   serviceSubnet: "10.246.0.0/16"
 nodes:
 - role: control-plane
-- role: worker

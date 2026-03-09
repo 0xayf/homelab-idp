@@ -10,7 +10,7 @@ Homelab IDP bootstraps a Kubernetes platform, seeds GitOps state into Gitea, the
 
 - **Bootstrap layer**: Ansible + Terraform create the initial cluster state.
 - **GitOps handoff**: Bootstrap script pushes `platform-core` into Gitea and applies the ArgoCD `ApplicationSet`.
-- **Day-2 model**: all future platform changes happen in `homelab/platform-core` (inside Gitea), not in Terraform.
+- **Day-2 model**: All future platform changes happen in `homelab/platform-core` (inside Gitea), managed by ArgoCD.
 
 ## What Gets Installed
 
@@ -26,38 +26,91 @@ For deeper bootstrap internals, see `docs/terraform-bootstrap-handoff.md`.
 ## Quick Start (Kind)
 
 Use this path to validate the platform quickly on a local disposable cluster.
+The provided Kind config is single-node (control-plane only) to reduce local resource usage.
 
 Prerequisites:
 
 - `kind`, `kubectl`, `terraform`
 - `python3` + `pyyaml`
 - `curl`, `jq`, `git`, `sed`
-- container runtime for Kind (Docker or Podman)
+- container runtime for Kind:
+  - Docker
+  - Podman (rootful machine mode for this Kind + Cilium path)
+- Recommended resource requirements: `6` CPUs, `12` GiB RAM
+
+If you use Docker Desktop, set resources in Docker Desktop settings before cluster creation.
+You can check current Docker resources with:
+`docker info --format 'CPUs={{.NCPU}} TotalMemoryBytes={{.MemTotal}}'`
 
 ```bash
 # 1) Create local config from the kind profile
 cp config/homelab.kind.example.yaml config/homelab.yaml
 
-# 2) Create the kind cluster
+# 2) Podman only: set rootful mode + recommended resources
+podman machine stop podman-machine-default
+podman machine set --rootful=true --cpus 6 --memory 12288 podman-machine-default
+podman machine start podman-machine-default
+
+# 3) Create the kind cluster
+# Docker
 kind create cluster --name homelab --config docs/examples/kind-homelab.yaml --wait 0
+
+# Podman (rootful)
+KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name homelab --config docs/examples/kind-homelab.yaml --wait 0
+
 kubectl config use-context kind-homelab
 
-# 3) Confirm your kind network subnet and adjust config/homelab.yaml VIPs if needed
+# 4) Confirm your kind network subnet and adjust config/homelab.yaml VIPs if needed
 # Docker:
-docker network inspect kind --format '{{(index .IPAM.Config 0).Subnet}}'
+docker network inspect kind | jq -r '.[0].IPAM.Config[]?.Subnet | select(test("^[0-9]+(\\.[0-9]+){3}/[0-9]+$"))' | head -n1
 # Podman:
-podman network inspect kind | jq -r '.[0].subnets[0].subnet'
+podman network inspect kind | jq -r '.[0].subnets[]?.subnet | select(test("^[0-9]+(\\.[0-9]+){3}/[0-9]+$"))' | head -n1
 
-# 4) Render config into tfvars/inventory/platform-core values
+# 5) Render config into tfvars/inventory/platform-core values
 python3 scripts/render-config.py --config config/homelab.yaml
 
-# 5) Bootstrap platform
+# 6) Bootstrap platform
 cd bootstrap/terraform
 terraform init
 terraform apply -var kubeconfig_context=kind-homelab -var kubeconfig_path=~/.kube/config
 
-# 6) Verify
+# 7) Verify
 kubectl get applications -n argocd
+```
+
+Quick local UI access (default hosts from `config/homelab.kind.example.yaml`):
+
+- ArgoCD: `https://cd.lab`
+- Gitea: `https://git.lab`
+- MinIO Console: `https://storage.lab`
+- MinIO API (S3): `https://s3.lab`
+- Vault: `https://secrets.lab`
+
+If those hostnames do not resolve, print a hosts entry and add it to `/etc/hosts`:
+
+```bash
+HOSTS=$(kubectl get ingress -A -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{" "}{end}{end}')
+INGRESS_IP=$(kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "$INGRESS_IP $HOSTS"
+```
+
+Initial credentials:
+
+```bash
+# ArgoCD
+echo "username: admin"
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+
+# Gitea
+kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d; echo
+kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d; echo
+
+# MinIO
+kubectl -n minio get secret minio -o jsonpath='{.data.root-user}' | base64 -d; echo
+kubectl -n minio get secret minio -o jsonpath='{.data.root-password}' | base64 -d; echo
+
+# Vault
+kubectl -n vault get secret init-credentials -o jsonpath='{.data.root-token}' | base64 -d; echo
 ```
 
 Full local runbook (including Podman/WSL notes, UI access, cleanup):
@@ -98,7 +151,6 @@ After bootstrap succeeds:
 - `docs/install-kind.md` - local Kind install and verification
 - `docs/install-k3s.md` - recommended real deployment path
 - `docs/configuration.md` - `homelab.yaml` schema, defaults, environment profiles
-- `docs/troubleshooting.md` - common bootstrap/runtime issues and fixes
 - `docs/ansible-k3s-provisioning.md` - detailed Ansible playbooks and role vars
 - `docs/terraform-bootstrap-handoff.md` - Terraform bootstrap and ArgoCD takeover internals
 - `docs/secrets-management.md` - Vault/ESO/Crossplane architecture
