@@ -86,7 +86,7 @@ Quick local UI access (default hosts from `config/homelab.kind.example.yaml`):
 - MinIO API (S3): `https://s3.lab`
 - Vault: `https://secrets.lab`
 
-If those hostnames do not resolve, print a hosts entry and add it to `/etc/hosts`:
+Print a hosts entry and add it to `/etc/hosts`:
 
 ```bash
 HOSTS=$(kubectl get ingress -A -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{" "}{end}{end}')
@@ -132,8 +132,8 @@ Start here: `docs/install-k3s.md`
 
 Use one of the provided templates as your starting point:
 
-- `config/homelab.kind.example.yaml` - local Kind profile (`storage.default_class: standard`)
-- `config/homelab.k3s.example.yaml` - real k3s profile (`storage.default_class: local-path`)
+- `config/homelab.kind.example.yaml`
+- `config/homelab.k3s.example.yaml`
 
 Full config reference: `docs/configuration.md`
 
