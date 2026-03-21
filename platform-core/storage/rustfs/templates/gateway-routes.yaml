@@ -12,20 +12,6 @@ spec:
     stsIncludeSubdomains: true
     stsPreload: true
 ---
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: rustfs-console-auth
-  namespace: "{{ .Release.Namespace }}"
-spec:
-  forwardAuth:
-    address: http://{{ .Values.gateway.oauth2ProxyService.name }}.{{ .Values.gateway.oauth2ProxyService.namespace }}.svc.cluster.local/
-    trustForwardHeader: true
-    authResponseHeaders:
-      - X-Auth-Request-User
-      - X-Auth-Request-Email
-      - X-Auth-Request-Preferred-Username
----
 # S3 API — HTTP redirect to HTTPS
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -53,7 +39,7 @@ spec:
             port: 443
             statusCode: 301
 ---
-# S3 API — HTTPS (no auth, S3 clients use access key/secret key)
+# S3 API — HTTPS
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -110,32 +96,7 @@ spec:
             port: 443
             statusCode: 301
 ---
-# Console — oauth2-proxy callback route
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: rustfs-console-oauth2
-  namespace: "{{ .Release.Namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-spec:
-  parentRefs:
-    - name: {{ .Values.gateway.gatewayName }}
-      namespace: {{ .Values.gateway.gatewayNamespace }}
-      sectionName: websecure
-  hostnames:
-    - {{ .Values.gateway.consoleService.host }}
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /oauth2
-      backendRefs:
-        - name: {{ .Values.gateway.oauth2ProxyService.name }}
-          namespace: {{ .Values.gateway.oauth2ProxyService.namespace }}
-          port: {{ .Values.gateway.oauth2ProxyService.port }}
----
-# Console — HTTPS with forward auth via oauth2-proxy
+# Console — HTTPS
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -156,11 +117,6 @@ spec:
             type: PathPrefix
             value: /
       filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: rustfs-console-auth
         - type: ExtensionRef
           extensionRef:
             group: traefik.io

@@ -11,7 +11,9 @@ spec:
   clientId: {{ .Values.oidc.clientId }}
   rootUrl: https://{{ .Values.dashboardHost }}
   validRedirectUris:
-    - {{ .Values.oidc.redirectUrl }}
+    {{- range .Values.oidc.redirectUris }}
+    - {{ . }}
+    {{- end }}
   webOrigins:
     - https://{{ .Values.dashboardHost }}
   audienceMapper:

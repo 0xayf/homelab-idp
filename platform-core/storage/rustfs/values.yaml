@@ -22,7 +22,7 @@ rustfs:
     type: ClusterIP
 
   storageclass:
-    name: standard
+    name: __DEFAULT_STORAGE_CLASS__
     dataStorageSize: 5Gi
     logStorageSize: 256Mi
 
@@ -44,10 +44,6 @@ rustfs:
 gateway:
   gatewayName: shared-internal
   gatewayNamespace: traefik
-  oauth2ProxyService:
-    name: oauth2-proxy
-    namespace: oauth2-proxy
-    port: 80
   apiService:
     name: rustfs-svc
     port: 9000

@@ -3,7 +3,6 @@ oidcConsumerNamespaces:
   - gitea
   - oauth2-proxy
   - vault
-  - rustfs
 
 sharedGatewayNamespaces:
   - traefik

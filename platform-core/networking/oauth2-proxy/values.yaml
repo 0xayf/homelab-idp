@@ -10,9 +10,8 @@ upstream:
     configFile: |
       provider = "keycloak-oidc"
       provider_display_name = "Keycloak"
-      oidc_issuer_url = "http://keycloak-http.keycloak.svc.cluster.local/realms/lab"
-      insecure_oidc_skip_issuer_verification = true
-      redirect_url = "https://__TRAEFIK_HOSTNAME__/oauth2/callback"
+      oidc_issuer_url = "https://__KEYCLOAK_HOSTNAME__/realms/lab"
+      provider_ca_files = [ "/etc/oauth2-proxy/provider-ca/ca.crt" ]
       email_domains = [ "*" ]
       upstreams = [ "static://202" ]
       reverse_proxy = true
@@ -24,6 +23,7 @@ upstream:
       cookie_httponly = true
       cookie_samesite = "lax"
       cookie_refresh = "1h"
+      cookie_domains = [ ".__BASE_DOMAIN__" ]
       whitelist_domains = [ ".__BASE_DOMAIN__" ]
       set_xauthrequest = true
       pass_access_token = false
@@ -53,11 +53,21 @@ upstream:
     fsGroup: 2000
     runAsNonRoot: true
 
+  extraVolumes:
+    - name: provider-ca
+      secret:
+        secretName: platform-root-ca
+
+  extraVolumeMounts:
+    - name: provider-ca
+      mountPath: /etc/oauth2-proxy/provider-ca
+      readOnly: true
 
 oidc:
   clientId: oauth2-proxy
-  issuerUrl: http://keycloak-http.keycloak.svc.cluster.local/realms/lab
-  redirectUrl: https://__TRAEFIK_HOSTNAME__/oauth2/callback
+  issuerUrl: https://__KEYCLOAK_HOSTNAME__/realms/lab
+  redirectUris:
+    - https://__TRAEFIK_HOSTNAME__/oauth2/callback
   allowedGroups:
     - lab-admins
   scopes:
@@ -73,7 +83,6 @@ dashboardHost: __TRAEFIK_HOSTNAME__
 
 referenceGrantNamespaces:
   - traefik
-  - rustfs
 
 certificates:
   clusterIssuer: lab-ca-issuer
