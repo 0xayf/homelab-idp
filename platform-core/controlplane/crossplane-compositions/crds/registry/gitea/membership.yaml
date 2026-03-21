@@ -1,14 +1,14 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: memberships.registry.platform.lab
+  name: memberships.registry.local.lab
   annotations:
     argocd.argoproj.io/sync-wave: "1"
   labels:
-    crossplane.io/xrd: memberships.registry.platform.lab
+    crossplane.io/xrd: memberships.registry.local.lab
 spec:
   compositeTypeRef:
-    apiVersion: registry.platform.lab/v1alpha1
+    apiVersion: registry.local.lab/v1alpha1
     kind: Membership
   mode: Pipeline
   pipeline:
@@ -43,7 +43,7 @@ spec:
                 kind: ClusterProviderConfig
                 name: {{ $providerConfigName }}
             ---
-            apiVersion: registry.platform.lab/v1alpha1
+            apiVersion: registry.local.lab/v1alpha1
             kind: Membership
             metadata:
               name: {{ $name }}

@@ -1,7 +1,23 @@
 crds:
   keep: true
 
+configs:
+  params:
+    server.insecure: "true"
+  cm:
+    url: https://${hostname}
+    oidc.config: |
+      name: Keycloak
+      issuer: https://${keycloak_hostname}/realms/lab
+      clientID: argocd
+      clientSecret: $oidc.keycloak.clientSecret
+      requestedScopes: ["openid", "profile", "email"]
+      rootCA: $oidc.keycloak.rootCA
+  rbac:
+    policy.default: role:readonly
+    policy.csv: |
+      g, lab-admins, role:admin
+    scopes: "[groups, preferred_username]"
+
 server:
   url: https://${hostname}
-  extraArgs:
-    - --insecure

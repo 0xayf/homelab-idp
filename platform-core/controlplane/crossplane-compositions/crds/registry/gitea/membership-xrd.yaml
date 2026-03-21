@@ -1,9 +1,9 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: memberships.registry.platform.lab
+  name: memberships.registry.local.lab
 spec:
-  group: registry.platform.lab
+  group: registry.local.lab
   names:
     kind: Membership
     plural: memberships

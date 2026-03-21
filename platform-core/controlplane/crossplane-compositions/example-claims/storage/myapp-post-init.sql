@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS myapp.users (id serial PRIMARY KEY);

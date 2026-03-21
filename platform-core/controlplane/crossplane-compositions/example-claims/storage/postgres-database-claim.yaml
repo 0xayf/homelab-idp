@@ -22,9 +22,10 @@
 # - The uri value URL-encodes the password (for example, @ becomes %40).
 # - Pass uri directly to a PostgreSQL client/driver as DATABASE_URL.
 #   The driver decodes it during connection parsing.
+# - The uri includes `sslmode=require` by default.
 
 # Minimal example (uses all defaults):
-apiVersion: storage.platform.lab/v1alpha1
+apiVersion: storage.local.lab/v1alpha1
 kind: Postgres
 metadata:
   name: myapp-db
@@ -33,7 +34,11 @@ spec:
   databaseName: myapp
 ---
 # Full example with all options:
-apiVersion: storage.platform.lab/v1alpha1
+# If using postInitSQLConfigMapRef, create the ConfigMap from your SQL file first:
+#   kubectl create configmap myapp-post-init \
+#     --from-file=init.sql=example-claims/storage/myapp-post-init.sql \
+#     -n crossplane-examples
+apiVersion: storage.local.lab/v1alpha1
 kind: Postgres
 metadata:
   name: myapp-db-full
@@ -49,3 +54,25 @@ spec:
   resources:
     cpu: "1"
     memory: "1Gi"
+
+  # Optional: Schema to create in the database after initialisation.
+  # When set, the composition automatically runs:
+  #   CREATE SCHEMA IF NOT EXISTS <schema>
+  #   DROP SCHEMA IF EXISTS public
+  schema: myapp
+
+  # Optional: Connection URI query parameters appended to the generated uri.
+  # `sslmode` defaults to `require` and can be overridden here.
+  connectionParams:
+    search_path: myapp
+
+  # Optional: Inline post-init SQL statements executed after database creation.
+  # Runs after schema creation (if schema is set).
+  postInitSQL:
+    - CREATE TABLE IF NOT EXISTS myapp.users (id serial PRIMARY KEY)
+
+  # Optional: Reference a SQL file stored in a ConfigMap (recommended for larger scripts).
+  # The ConfigMap must exist before the Postgres claim.
+  # postInitSQLConfigMapRef:
+  #   name: myapp-post-init
+  #   key: init.sql

@@ -1,0 +1,146 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: clients.auth.local.lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    crossplane.io/xrd: clients.auth.local.lab
+spec:
+  compositeTypeRef:
+    apiVersion: auth.local.lab/v1alpha1
+    kind: Client
+  mode: Pipeline
+  pipeline:
+    - step: create-keycloak-client
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := getCompositeResource . -}}
+            {{- $name := $xr.metadata.name -}}
+            {{- $namespace := $xr.metadata.namespace -}}
+            {{- $clientSecretName := printf "%s-oidc-client-secret" $namespace -}}
+            {{- $clientId := $xr.spec.clientId -}}
+            {{- $displayName := default $clientId $xr.spec.displayName -}}
+            {{- $realmId := default "lab" $xr.spec.realmId -}}
+            {{- $accessType := default "CONFIDENTIAL" $xr.spec.accessType -}}
+            {{- $standardFlowEnabled := default true $xr.spec.standardFlowEnabled -}}
+            {{- $serviceAccountsEnabled := default false $xr.spec.serviceAccountsEnabled -}}
+            {{- $directAccessGrantsEnabled := default false $xr.spec.directAccessGrantsEnabled -}}
+            {{- $validRedirectUris := default (list) $xr.spec.validRedirectUris -}}
+            {{- $webOrigins := default (list) $xr.spec.webOrigins -}}
+            {{- $groupMapperEnabled := $xr | dig "spec" "groupMembershipMapper" "enabled" true -}}
+            {{- $groupMapperName := $xr | dig "spec" "groupMembershipMapper" "name" "groups" -}}
+            {{- $groupMapperClaimName := $xr | dig "spec" "groupMembershipMapper" "claimName" "groups" -}}
+            {{- $groupMapperFullPath := $xr | dig "spec" "groupMembershipMapper" "fullPath" false -}}
+            {{- $addToIdToken := $xr | dig "spec" "groupMembershipMapper" "addToIdToken" true -}}
+            {{- $addToAccessToken := $xr | dig "spec" "groupMembershipMapper" "addToAccessToken" true -}}
+            {{- $addToUserinfo := $xr | dig "spec" "groupMembershipMapper" "addToUserinfo" true -}}
+            {{- $audienceMapperEnabled := $xr | dig "spec" "audienceMapper" "enabled" false -}}
+            {{- $includedClientAudience := $xr | dig "spec" "audienceMapper" "includedClientAudience" $clientId -}}
+            {{- $audienceAddToIdToken := $xr | dig "spec" "audienceMapper" "addToIdToken" true -}}
+            {{- $audienceAddToAccessToken := $xr | dig "spec" "audienceMapper" "addToAccessToken" true -}}
+            {{- $audienceAddToUserinfo := $xr | dig "spec" "audienceMapper" "addToUserinfo" false -}}
+            {{- $audienceAddToIntrospectionToken := $xr | dig "spec" "audienceMapper" "addToIntrospectionToken" true -}}
+            ---
+            apiVersion: secrets.local.lab/v1alpha1
+            kind: Random
+            metadata:
+              name: {{ $clientSecretName }}
+              namespace: {{ $namespace }}
+              annotations:
+                {{ setResourceNameAnnotation "client-secret" }}
+            spec:
+              length: 48
+              includeSymbols: true
+            ---
+            apiVersion: openidclient.keycloak.m.crossplane.io/v1alpha1
+            kind: Client
+            metadata:
+              name: {{ $name }}
+              namespace: {{ $namespace }}
+              annotations:
+                {{ setResourceNameAnnotation "keycloak-client" }}
+            spec:
+              forProvider:
+                accessType: {{ $accessType }}
+                clientId: {{ $clientId }}
+                name: {{ $displayName }}
+                realmId: {{ $realmId }}
+                standardFlowEnabled: {{ $standardFlowEnabled }}
+                serviceAccountsEnabled: {{ $serviceAccountsEnabled }}
+                directAccessGrantsEnabled: {{ $directAccessGrantsEnabled }}
+                rootUrl: {{ $xr.spec.rootUrl | quote }}
+                validRedirectUris:
+                {{- range $redirect := $validRedirectUris }}
+                  - {{ $redirect | quote }}
+                {{- end }}
+                webOrigins:
+                {{- range $origin := $webOrigins }}
+                  - {{ $origin | quote }}
+                {{- end }}
+                clientSecretSecretRef:
+                  name: {{ $clientSecretName }}
+                  key: password
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: keycloak-provider-config
+            {{- if $groupMapperEnabled }}
+            ---
+            apiVersion: openidgroup.keycloak.m.crossplane.io/v1alpha1
+            kind: GroupMembershipProtocolMapper
+            metadata:
+              name: {{ printf "%s-groups" $name | lower }}
+              namespace: {{ $namespace }}
+              annotations:
+                {{ setResourceNameAnnotation "group-membership-mapper" }}
+            spec:
+              forProvider:
+                name: {{ $groupMapperName }}
+                claimName: {{ $groupMapperClaimName }}
+                fullPath: {{ $groupMapperFullPath }}
+                addToIdToken: {{ $addToIdToken }}
+                addToAccessToken: {{ $addToAccessToken }}
+                addToUserinfo: {{ $addToUserinfo }}
+                realmId: {{ $realmId }}
+                clientIdRef:
+                  name: {{ $name }}
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: keycloak-provider-config
+            {{- end }}
+            {{- if $audienceMapperEnabled }}
+            ---
+            apiVersion: client.keycloak.m.crossplane.io/v1alpha1
+            kind: ProtocolMapper
+            metadata:
+              name: {{ printf "%s-audience" $name | lower }}
+              namespace: {{ $namespace }}
+              annotations:
+                {{ setResourceNameAnnotation "audience-mapper" }}
+            spec:
+              forProvider:
+                realmId: {{ $realmId }}
+                name: audience
+                protocol: openid-connect
+                protocolMapper: oidc-audience-mapper
+                clientIdRef:
+                  name: {{ $name }}
+                config:
+                  included.client.audience: {{ $includedClientAudience | quote }}
+                  id.token.claim: {{ ternary "true" "false" $audienceAddToIdToken | quote }}
+                  access.token.claim: {{ ternary "true" "false" $audienceAddToAccessToken | quote }}
+                  userinfo.token.claim: {{ ternary "true" "false" $audienceAddToUserinfo | quote }}
+                  introspection.token.claim: {{ ternary "true" "false" $audienceAddToIntrospectionToken | quote }}
+              providerConfigRef:
+                kind: ClusterProviderConfig
+                name: keycloak-provider-config
+            {{- end }}
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready

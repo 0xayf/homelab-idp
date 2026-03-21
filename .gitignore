@@ -47,3 +47,4 @@ __pycache__/
 *.crt
 AGENTS.md
 CLAUDE.md
+.DS_Store

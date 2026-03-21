@@ -1,5 +1,5 @@
 # Example: Create app token, store credentials in Vault, and project dockerconfigjson secret
-apiVersion: registry.platform.lab/v1alpha1
+apiVersion: registry.local.lab/v1alpha1
 kind: Token
 metadata:
   name: app-demo-split-registry-token
@@ -10,7 +10,7 @@ spec:
     name: app-demo-split-userpass
     key: credentials
   username: app-demo-split
-  registryHost: git.lab
+  registryHost: git.local.lab
   orgName: homelab
   repositoryName: demo-split
   tokenName: registry-demo-split

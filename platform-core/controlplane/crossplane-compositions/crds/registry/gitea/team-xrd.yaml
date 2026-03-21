@@ -1,9 +1,9 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: teams.registry.platform.lab
+  name: teams.registry.local.lab
 spec:
-  group: registry.platform.lab
+  group: registry.local.lab
   names:
     kind: Team
     plural: teams

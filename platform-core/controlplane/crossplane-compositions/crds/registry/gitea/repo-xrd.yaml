@@ -1,9 +1,9 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: repos.registry.platform.lab
+  name: repos.registry.local.lab
 spec:
-  group: registry.platform.lab
+  group: registry.local.lab
   names:
     kind: Repo
     plural: repos
@@ -25,7 +25,7 @@ spec:
                 registryHost:
                   type: string
                   description: Registry hostname used in status.repositoryUrl.
-                  default: git.lab
+                  default: git.local.lab
                 description:
                   type: string
                   description: Repository description.

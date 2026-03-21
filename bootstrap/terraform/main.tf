@@ -18,7 +18,8 @@ module "gitea" {
 module "argocd" {
   source = "./core/argocd"
 
-  hostname = var.argocd_hostname
+  hostname          = var.argocd_hostname
+  keycloak_hostname = var.keycloak_hostname
 
   depends_on = [module.cilium]
 }

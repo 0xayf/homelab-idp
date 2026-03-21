@@ -1,9 +1,9 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: users.registry.platform.lab
+  name: users.registry.local.lab
 spec:
-  group: registry.platform.lab
+  group: registry.local.lab
   names:
     kind: User
     plural: users

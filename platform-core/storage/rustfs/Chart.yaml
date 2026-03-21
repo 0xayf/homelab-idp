@@ -1,0 +1,8 @@
+apiVersion: v2
+name: rustfs
+description: Wrapper chart to deploy RustFS S3-compatible object storage.
+version: 0.1.0
+dependencies:
+  - name: rustfs
+    version: "0.0.89"
+    repository: "https://charts.rustfs.com"

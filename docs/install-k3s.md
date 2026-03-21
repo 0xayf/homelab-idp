@@ -7,7 +7,7 @@ This is the recommended path for real homelab usage.
 - Ubuntu host reachable over SSH
 - Local machine with `python3`, `ansible`, `terraform`, `kubectl`, `jq`, `curl`, `git`, `sed`
 - SSH access to the host with sudo
-- DNS control for your lab domain (for example OPNsense Unbound overrides)
+- DNS control for your lab domain (e.g., OPNsense Unbound overrides)
 
 ## 1) Create your config
 
@@ -19,10 +19,11 @@ cp config/homelab.k3s.example.yaml config/homelab.yaml
 
 Edit `config/homelab.yaml` for your environment:
 
-- `cluster.server_ip`
-- MetalLB range/VIPs (`network.*`)
-- ingress domain/prefixes (`ingress.*`)
-- optional `network.gitea_ssh_allowed_sources`
+- `cluster.server_ip` — k3s server host IP
+- `network.*` — MetalLB range, Traefik LB IP, Gitea SSH LB IP
+- `dns.*` — base domain and hostname prefixes
+- `admin.*` — Keycloak admin profile (optional, has defaults)
+- Optional: `network.gitea_ssh_allowed_sources`, `network.traefik_dashboard_allowed_sources`
 
 For k3s defaults, keep:
 
@@ -77,12 +78,14 @@ Deep dive: `docs/terraform-bootstrap-handoff.md`
 
 ## 5) Configure DNS and TLS trust
 
-Map hostnames to ingress and SSH VIPs from `config/homelab.yaml`:
+Map hostnames to the Traefik and SSH LoadBalancer IPs from `config/homelab.yaml`:
 
-- ingress hosts -> `network.ingress_nginx_loadbalancer_ip`
-- `git-ssh.<base-domain>` -> `network.gitea_ssh_loadbalancer_ip`
+- All `*.{base_domain}` hosts -> `network.traefik_loadbalancer_ip`
+- `git-ssh.{base_domain}` -> `network.gitea_ssh_loadbalancer_ip`
 
-Export and trust cluster CA locally:
+For example with OPNsense Unbound, add host overrides for each hostname pointing to the Traefik LB IP.
+
+Export and trust the cluster CA locally:
 
 ```bash
 ./scripts/get-ca-cert.sh
@@ -92,10 +95,21 @@ Export and trust cluster CA locally:
 
 ```bash
 kubectl get applications -n argocd
-kubectl -n gitea get svc gitea-ssh -o wide
 ```
 
 Expected steady state: all apps `Synced` + `Healthy`.
+
+Services available at `*.{base_domain}`:
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| ArgoCD | `https://cd.{base_domain}` | OIDC login via Keycloak |
+| Gitea | `https://git.{base_domain}` | OIDC login via Keycloak |
+| Keycloak | `https://auth.{base_domain}` | Identity provider admin |
+| Traefik | `https://gateway.{base_domain}` | Dashboard (oauth2-proxy protected) |
+| Vault | `https://secrets.{base_domain}` | Secret management |
+| RustFS Console | `https://storage.{base_domain}` | S3 storage (oauth2-proxy protected) |
+| RustFS S3 API | `https://s3.{base_domain}` | S3-compatible API |
 
 ## Day-2 Changes
 

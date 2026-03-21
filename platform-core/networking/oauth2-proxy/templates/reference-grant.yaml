@@ -1,0 +1,19 @@
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-routes
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  from:
+    {{- range .Values.referenceGrantNamespaces }}
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: {{ . }}
+    {{- end }}
+  to:
+    - group: ""
+      kind: Service

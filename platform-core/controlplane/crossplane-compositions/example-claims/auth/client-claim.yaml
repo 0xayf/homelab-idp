@@ -1,0 +1,31 @@
+# Example: Provision a Keycloak OIDC client via Crossplane composition
+#
+# Prerequisites:
+# - A Keycloak realm named "lab" exists
+# - keycloak-provider-config ClusterProviderConfig is installed
+# - Namespace Vault onboarding exists for this namespace (for example, apply
+#   example-claims/secrets/vault-onboarding-claim.yaml first in crossplane-examples)
+apiVersion: auth.local.lab/v1alpha1
+kind: Client
+metadata:
+  name: app-oidc-client
+  namespace: crossplane-examples
+spec:
+  clientId: app-oidc-client
+  realmId: lab
+  accessType: CONFIDENTIAL
+  standardFlowEnabled: true
+  serviceAccountsEnabled: false
+  directAccessGrantsEnabled: false
+  rootUrl: https://app.lab
+  validRedirectUris:
+    - https://app.lab/auth/callback
+  webOrigins:
+    - https://app.lab
+  groupMembershipMapper:
+    enabled: true
+    name: groups
+    claimName: groups
+    addToIdToken: true
+    addToAccessToken: true
+    addToUserinfo: true

@@ -1,0 +1,82 @@
+keycloak:
+  replicas: 1
+
+  command:
+    - "/opt/keycloak/bin/kc.sh"
+    - "start"
+    - "--hostname=https://__KEYCLOAK_HOSTNAME__/"
+    - "--hostname-strict=true"
+    - "--hostname-backchannel-dynamic=true"
+    - "--cache=local"
+    - "--db-schema=keycloak"
+
+  extraEnv: |
+    - name: KC_BOOTSTRAP_ADMIN_CLIENT_ID
+      value: bootstrap-admin
+    - name: KC_BOOTSTRAP_ADMIN_CLIENT_SECRET
+      value: bootstrap-admin-temp
+
+  dbchecker:
+    enabled: true
+
+  database:
+    vendor: postgres
+    hostname: pg-keycloak-rw.keycloak.svc.cluster.local
+    port: 5432
+    database: keycloak
+    username: keycloak
+    existingSecret: keycloak-db
+    existingSecretKey: password
+
+  proxy:
+    enabled: true
+    mode: xforwarded
+
+  http:
+    relativePath: /
+
+  health:
+    enabled: true
+
+  metrics:
+    enabled: true
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 768Mi
+    limits:
+      cpu: 750m
+      memory: 1Gi
+
+  statefulsetAnnotations:
+    argocd.argoproj.io/sync-wave: "5"
+
+  affinity: ""
+
+gateway:
+  gatewayName: shared-internal
+  gatewayNamespace: traefik
+  service:
+    name: keycloak-http
+    port: 80
+    host: __KEYCLOAK_HOSTNAME__
+
+realm:
+  name: lab
+
+crossplaneProvider:
+  username: crossplane-provider
+
+bootstrap:
+  breakglassAdmin:
+    username: admin
+  labAdmin:
+    username: lab-admin
+    groupName: lab-admins
+    profile:
+      firstName: __ADMIN_FIRST_NAME__
+      lastName: __ADMIN_LAST_NAME__
+      email: __ADMIN_EMAIL__
+      emailVerified: true
+    requiredActions: []

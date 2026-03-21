@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-core
+  namespace: {{ .Release.Namespace }}
+spec:
+  goTemplate: true
+  generators:
+  - git:
+      repoURL: http://gitea-http.gitea.svc.cluster.local:3000/homelab/platform-core.git
+      revision: HEAD
+      files:
+      - path: "**/Chart.yaml"
+      values:
+         oidcConsumerNamespaces: '{{ .Values.oidcConsumerNamespaces | toJson }}'
+         sharedGatewayNamespaces: '{{ .Values.sharedGatewayNamespaces | toJson }}'
+  template:
+    metadata:
+      name: '{{ "{{ .path.basename }}" }}'
+      namespace: {{ .Release.Namespace }}
+    spec:
+      project: default
+      source:
+        repoURL: http://gitea-http.gitea.svc.cluster.local:3000/homelab/platform-core.git
+        targetRevision: HEAD
+        path: '{{ "{{ .path.path }}" }}'
+        helm:
+          releaseName: '{{ "{{ .path.basename }}" }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ "{{ .path.basename }}" }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+  templatePatch: |
+    {{`{{- $oidcConsumerNamespaces := fromJson .values.oidcConsumerNamespaces -}}`}}
+    {{`{{- $sharedGatewayNamespaces := fromJson .values.sharedGatewayNamespaces -}}`}}
+    {{`{{- $oidcConsumer := has .path.basename $oidcConsumerNamespaces -}}`}}
+    {{`{{- $sharedGatewayConsumer := has .path.basename $sharedGatewayNamespaces -}}`}}
+    {{`{{- if or $oidcConsumer $sharedGatewayConsumer }}`}}
+    spec:
+      syncPolicy:
+        managedNamespaceMetadata:
+          labels:
+            {{`{{- if $oidcConsumer }}`}}
+            local.lab/oidc-consumer: "true"
+            {{`{{- end }}`}}
+            {{`{{- if $sharedGatewayConsumer }}`}}
+            local.lab/shared-gateway-access: "true"
+            {{`{{- end }}`}}
+    {{`{{- end }}`}}

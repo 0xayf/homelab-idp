@@ -1,0 +1,73 @@
+traefik:
+  service:
+    type: LoadBalancer
+    spec:
+      externalTrafficPolicy: Local
+      loadBalancerIP: __TRAEFIK_LOADBALANCER_IP__
+
+  ports:
+    web:
+      port: 80
+      exposedPort: 80
+    websecure:
+      port: 443
+      exposedPort: 443
+
+  securityContext:
+    capabilities:
+      add:
+        - NET_BIND_SERVICE
+
+  api:
+    dashboard: true
+    insecure: false
+
+  providers:
+    kubernetesGateway:
+      enabled: true
+    kubernetesCRD:
+      enabled: true
+      allowCrossNamespace: false
+    kubernetesIngress:
+      enabled: false
+
+  gateway:
+    enabled: false
+
+  gatewayClass:
+    enabled: false
+
+  ingressRoute:
+    dashboard:
+      enabled: false
+
+  logs:
+    general:
+      level: INFO
+    access:
+      enabled: true
+
+dashboard:
+  host: __TRAEFIK_HOSTNAME__
+  oauth2ProxyService:
+    name: oauth2-proxy
+    namespace: oauth2-proxy
+    port: 80
+  accessCidrs: __TRAEFIK_DASHBOARD_SOURCE_RANGES__
+
+sharedGateway:
+  name: shared-internal
+  className: traefik
+  allowedRoutesLabel: __BASE_DOMAIN__/shared-gateway-access
+  listeners:
+    web:
+      port: 80
+    websecure:
+      port: 443
+  tls:
+    secretName: shared-gateway-wildcard-tls
+    dnsNames:
+      - "*.__BASE_DOMAIN__"
+
+certificates:
+  clusterIssuer: lab-ca-issuer

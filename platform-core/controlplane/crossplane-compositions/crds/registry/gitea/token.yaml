@@ -1,14 +1,14 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: tokens.registry.platform.lab
+  name: tokens.registry.local.lab
   annotations:
     argocd.argoproj.io/sync-wave: "1"
   labels:
-    crossplane.io/xrd: tokens.registry.platform.lab
+    crossplane.io/xrd: tokens.registry.local.lab
 spec:
   compositeTypeRef:
-    apiVersion: registry.platform.lab/v1alpha1
+    apiVersion: registry.local.lab/v1alpha1
     kind: Token
   mode: Pipeline
   pipeline:
@@ -27,7 +27,7 @@ spec:
             {{- $username := $xr.spec.username -}}
             {{- $orgName := default "homelab" $xr.spec.orgName -}}
             {{- $repositoryName := $xr.spec.repositoryName -}}
-            {{- $registryHost := default "git.lab" $xr.spec.registryHost -}}
+            {{- $registryHost := default "git.local.lab" $xr.spec.registryHost -}}
             {{- $tokenName := default (printf "registry-%s" $name) $xr.spec.tokenName -}}
             {{- $providerConfigName := default (printf "%s-token-provider-config" $name) $xr.spec.providerConfigName -}}
             {{- $authSecretName := $xr.spec.authSecretRef.name -}}
@@ -163,7 +163,7 @@ spec:
                     namespace: {{ $namespace }}
                     name: {{ $name }}-registry-push
             ---
-            apiVersion: registry.platform.lab/v1alpha1
+            apiVersion: registry.local.lab/v1alpha1
             kind: Token
             metadata:
               name: {{ $name }}

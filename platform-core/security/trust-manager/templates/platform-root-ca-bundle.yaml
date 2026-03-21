@@ -1,0 +1,21 @@
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: platform-root-ca
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  sources:
+    - secret:
+        name: lab-root-ca
+        key: tls.crt
+  target:
+    secret:
+      key: ca.crt
+      metadata:
+        annotations:
+          argocd.argoproj.io/sync-wave: "1"
+    namespaceSelector:
+      matchLabels:
+        local.lab/oidc-consumer: "true"

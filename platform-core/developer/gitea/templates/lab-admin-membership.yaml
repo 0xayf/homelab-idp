@@ -1,0 +1,12 @@
+---
+apiVersion: registry.local.lab/v1alpha1
+kind: Membership
+metadata:
+  name: lab-admin-homelab-owners
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  username: {{ .Values.labAdmin.username }}
+  teamId: {{ .Values.labAdmin.homelabOwnersTeamId }}

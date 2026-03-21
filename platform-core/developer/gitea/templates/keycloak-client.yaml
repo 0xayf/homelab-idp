@@ -1,0 +1,16 @@
+---
+apiVersion: auth.local.lab/v1alpha1
+kind: Client
+metadata:
+  name: gitea
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  clientId: gitea
+  rootUrl: https://git.local.lab
+  validRedirectUris:
+    - https://git.local.lab/user/oauth2/keycloak/callback
+  webOrigins:
+    - https://git.local.lab

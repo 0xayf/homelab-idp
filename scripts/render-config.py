@@ -16,23 +16,34 @@ except ImportError:
 PLATFORM_CORE_PATCHES: dict[str, list[str]] = {
     "__DEFAULT_STORAGE_CLASS__": ["storage", "default_class"],
     "__METALLB_IP_RANGE__": ["network", "metallb_ip_range"],
-    "__INGRESS_NGINX_LOADBALANCER_IP__": ["network", "ingress_nginx_loadbalancer_ip"],
-    "__ARGOCD_HOSTNAME__": ["ingress", "prefixes", "argocd"],
-    "__GITEA_HOSTNAME__": ["ingress", "prefixes", "gitea"],
-    "__GITEA_SSH_HOSTNAME__": ["ingress", "prefixes", "gitea_ssh"],
+    "__TRAEFIK_LOADBALANCER_IP__": ["network", "traefik_loadbalancer_ip"],
+    "__ARGOCD_HOSTNAME__": ["dns", "prefixes", "argocd"],
+    "__GITEA_HOSTNAME__": ["dns", "prefixes", "gitea"],
+    "__GITEA_SSH_HOSTNAME__": ["dns", "prefixes", "gitea_ssh"],
     "__GITEA_SSH_LOADBALANCER_IP__": ["network", "gitea_ssh_loadbalancer_ip"],
     "__GITEA_SSH_SOURCE_RANGES__": ["network", "gitea_ssh_allowed_sources"],
-    "__VAULT_HOSTNAME__": ["ingress", "prefixes", "vault"],
-    "__MINIO_HOSTNAME__": ["ingress", "prefixes", "minio"],
-    "__MINIO_API_HOSTNAME__": ["ingress", "prefixes", "minio_api"],
+    "__KEYCLOAK_HOSTNAME__": ["dns", "prefixes", "keycloak"],
+    "__TRAEFIK_HOSTNAME__": ["dns", "prefixes", "traefik"],
+    "__VAULT_HOSTNAME__": ["dns", "prefixes", "vault"],
+    "__RUSTFS_CONSOLE_HOSTNAME__": ["dns", "prefixes", "rustfs_console"],
+    "__RUSTFS_API_HOSTNAME__": ["dns", "prefixes", "rustfs_api"],
+    "__BASE_DOMAIN__": ["dns", "base_domain"],
+    "__TRAEFIK_DASHBOARD_SOURCE_RANGES__": ["network", "traefik_dashboard_allowed_sources"],
+    "__ADMIN_FIRST_NAME__": ["admin", "first_name"],
+    "__ADMIN_LAST_NAME__": ["admin", "last_name"],
+    "__ADMIN_EMAIL__": ["admin", "email"],
 }
 
 LIST_PLACEHOLDER_DEFAULTS: dict[str, list[str]] = {
     "__GITEA_SSH_SOURCE_RANGES__": [],
+    "__TRAEFIK_DASHBOARD_SOURCE_RANGES__": [],
 }
 
 STRING_PLACEHOLDER_DEFAULTS: dict[str, str] = {
     "__DEFAULT_STORAGE_CLASS__": "local-path",
+    "__ADMIN_FIRST_NAME__": "Lab",
+    "__ADMIN_LAST_NAME__": "Admin",
+    "__ADMIN_EMAIL__": "admin@local.lab",
 }
 
 
@@ -91,7 +102,7 @@ def resolve_value(placeholder: str, config: dict, base_domain: str) -> str:
         return get_optional_string(config, path, STRING_PLACEHOLDER_DEFAULTS[placeholder])
 
     raw = get_required(config, path)
-    if path[:2] == ["ingress", "prefixes"]:
+    if path[:2] == ["dns", "prefixes"]:
         return build_hostname(raw, base_domain)
     return raw
 
@@ -132,7 +143,7 @@ def main() -> int:
     config = yaml.safe_load(config_path.read_text()) or {}
 
     server_ip = get_required(config, ["cluster", "server_ip"])
-    base_domain = get_required(config, ["ingress", "base_domain"])
+    base_domain = get_required(config, ["dns", "base_domain"])
 
     replacements = {
         ph: resolve_value(ph, config, base_domain)
@@ -144,6 +155,8 @@ def main() -> int:
     gitea_ssh_hostname = replacements["__GITEA_SSH_HOSTNAME__"]
     gitea_ssh_loadbalancer_ip = replacements["__GITEA_SSH_LOADBALANCER_IP__"]
     gitea_ssh_allowed_sources = replacements["__GITEA_SSH_SOURCE_RANGES__"]
+    keycloak_hostname = replacements["__KEYCLOAK_HOSTNAME__"]
+    traefik_hostname = replacements["__TRAEFIK_HOSTNAME__"]
 
     inventory_path = repo_root / "bootstrap/ansible/inventory/hosts"
     inventory_path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,6 +171,8 @@ def main() -> int:
         f'gitea_ssh_hostname = "{gitea_ssh_hostname}"',
         f'gitea_ssh_loadbalancer_ip = "{gitea_ssh_loadbalancer_ip}"',
         f"gitea_ssh_allowed_sources = {gitea_ssh_allowed_sources}",
+        f'keycloak_hostname = "{keycloak_hostname}"',
+        f'traefik_hostname = "{traefik_hostname}"',
     ]
     tfvars_path.write_text("\n".join(tfvars_lines) + "\n")
 

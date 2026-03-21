@@ -8,7 +8,8 @@ resource "helm_release" "argocd" {
 
   values = [
     templatefile("${path.module}/values.yaml", {
-      hostname = var.hostname
+      hostname           = var.hostname
+      keycloak_hostname  = var.keycloak_hostname
     })
   ]
 }

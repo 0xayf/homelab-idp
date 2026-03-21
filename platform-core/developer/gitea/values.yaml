@@ -1,0 +1,138 @@
+labAdmin:
+  username: lab-admin
+  homelabOwnersTeamId: 1
+
+gitea:
+  baseUrl: http://gitea-http.gitea.svc.cluster.local:3000
+
+  service:
+    ssh:
+      type: LoadBalancer
+      loadBalancerIP: __GITEA_SSH_LOADBALANCER_IP__
+      port: 22
+      externalTrafficPolicy: Local
+      loadBalancerSourceRanges: __GITEA_SSH_SOURCE_RANGES__
+
+  gitea:
+    config:
+      server:
+        DOMAIN: __GITEA_HOSTNAME__
+        SSH_DOMAIN: __GITEA_SSH_HOSTNAME__
+        ROOT_URL: https://__GITEA_HOSTNAME__/
+        SSH_PORT: 22
+        SSH_LISTEN_PORT: 2222
+    oauth:
+      - name: keycloak
+        provider: openidConnect
+        key: gitea
+        autoDiscoverUrl: http://keycloak-http.keycloak.svc.cluster.local/realms/lab/.well-known/openid-configuration
+        scopes: openid,profile,email
+        groupClaimName: groups
+        adminGroup: lab-admins
+
+  deployment:
+    annotations:
+      argocd.argoproj.io/sync-wave: "2"
+    env:
+      - name: GITEA_OAUTH_SECRET_0
+        valueFrom:
+          secretKeyRef:
+            name: gitea-oidc-client-secret
+            key: password
+
+  extraVolumes:
+    - name: platform-root-ca
+      secret:
+        secretName: platform-root-ca
+
+  extraInitVolumeMounts:
+    - name: platform-root-ca
+      mountPath: /etc/ssl/certs/platform-root-ca.crt
+      subPath: ca.crt
+      readOnly: true
+
+  extraContainerVolumeMounts:
+    - name: platform-root-ca
+      mountPath: /etc/ssl/certs/platform-root-ca.crt
+      subPath: ca.crt
+      readOnly: true
+
+  postgresql:
+    enabled: true
+    persistence:
+      enabled: true
+
+  postgresql-ha:
+    enabled: false
+
+  persistence:
+    enabled: true
+    size: 5Gi
+    labels:
+      app.kubernetes.io/managed-by: argocd
+
+actions:
+  enabled: true
+  giteaRootURL: https://__GITEA_HOSTNAME__
+  existingSecret: gitea-runner-token
+  existingSecretKey: token
+  statefulset:
+    replicas: 1
+    annotations:
+      argocd.argoproj.io/sync-wave: "6"
+    extraVolumes:
+      - name: platform-root-ca
+        secret:
+          secretName: platform-root-ca
+      - name: docker-certs
+        emptyDir: {}
+    actRunner:
+      tag: 0.3.0
+      extraVolumeMounts:
+        - name: platform-root-ca
+          mountPath: /etc/ssl/certs/platform-root-ca.crt
+          subPath: ca.crt
+          readOnly: true
+        - name: docker-certs
+          mountPath: /certs
+          readOnly: true
+      extraEnvs:
+        - name: DOCKER_HOST
+          value: "tcp://localhost:2376"
+        - name: DOCKER_TLS_VERIFY
+          value: "1"
+        - name: DOCKER_CERT_PATH
+          value: "/certs/client"
+      config: |
+        log:
+          level: info
+        cache:
+          enabled: false
+        container:
+          require_docker: true
+          docker_timeout: 300s
+          docker_host: "tcp://localhost:2376"
+        runner:
+          labels:
+            - "wolfi:docker://cgr.dev/chainguard/wolfi-base:latest"
+            - "alpine:docker://alpine:latest"
+            - "debian-slim:docker://debian:trixie-slim"
+    dind:
+      tag: 29.3.0-dind
+      extraVolumeMounts:
+        - name: docker-certs
+          mountPath: /certs
+        - name: platform-root-ca
+          mountPath: /etc/docker/certs.d/__GITEA_HOSTNAME__/ca.crt
+          subPath: ca.crt
+          readOnly: true
+    persistence:
+      size: 1Gi
+
+gateway:
+  gatewayName: shared-internal
+  gatewayNamespace: traefik
+  service:
+    name: gitea-http
+    port: 3000
+    host: __GITEA_HOSTNAME__

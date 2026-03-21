@@ -6,115 +6,116 @@
 
 ## Overview
 
-Homelab IDP bootstraps a Kubernetes platform, seeds GitOps state into Gitea, then hands ongoing ownership to ArgoCD.
+Homelab IDP turns a single Kubernetes cluster into a fully self-managing developer platform with SSO, secret management, object storage, CI/CD, and GitOps — all wired together and secured with internal TLS.
 
-- **Bootstrap layer**: Ansible + Terraform create the initial cluster state.
-- **GitOps handoff**: Bootstrap script pushes `platform-core` into Gitea and applies the ArgoCD `ApplicationSet`.
-- **Day-2 model**: All future platform changes happen in `homelab/platform-core` (inside Gitea), managed by ArgoCD.
+- **Bootstrap once**: Ansible provisions k3s, Terraform deploys Cilium + Gitea + ArgoCD and seeds the GitOps repo.
+- **Self-managing**: ArgoCD's ApplicationSet auto-discovers every chart in `platform-core/` — add a directory, get a deployed service.
+- **Eventual consistency**: Services start in whatever order they can, retry on missing dependencies, and converge to a healthy state without manual intervention.
+- **Day-2 workflow**: Clone `platform-core` from Gitea, edit, push. ArgoCD handles the rest.
 
 ## What Gets Installed
 
-Core platform services managed by ArgoCD from `platform-core/`:
+Platform services managed by ArgoCD from `platform-core/`:
 
-- Core: ArgoCD, Cilium, Gitea, ingress-nginx, MetalLB, cert-manager
-- Security: Vault, External Secrets
-- Storage: MinIO, CloudNativePG
-- Control plane: Crossplane, Crossplane compositions
+| Category | Service | Description |
+|----------|---------|-------------|
+| **GitOps** | ArgoCD | Continuous deployment from Gitea |
+| **Developer** | Gitea + Actions | Git server with CI/CD runners |
+| **Auth** | Keycloak | OIDC identity provider (SSO for all services) |
+| **Networking** | Cilium | CNI and network policy |
+| **Networking** | MetalLB | Bare-metal LoadBalancer IPs |
+| **Networking** | Traefik | Gateway API ingress with TLS termination |
+| **Networking** | oauth2-proxy | Forward auth for OIDC-protected services |
+| **Security** | cert-manager | Internal PKI (self-signed root CA) |
+| **Security** | trust-manager | CA certificate distribution across namespaces |
+| **Security** | Vault | Secret management |
+| **Security** | External Secrets | Vault-to-Kubernetes secret synchronization |
+| **Storage** | RustFS | S3-compatible object storage |
+| **Storage** | CloudNativePG | PostgreSQL operator |
+| **Controlplane** | Crossplane | Infrastructure compositions (Gitea, Vault, Keycloak, Postgres) |
 
 For deeper bootstrap internals, see `docs/terraform-bootstrap-handoff.md`.
 
 ## Quick Start (Kind)
 
-Use this path to validate the platform quickly on a local disposable cluster.
-The provided Kind config is single-node (control-plane only) to reduce local resource usage.
+Use this path to validate the platform on a local disposable cluster.
 
 Prerequisites:
 
 - `kind`, `kubectl`, `terraform`
 - `python3` + `pyyaml`
 - `curl`, `jq`, `git`, `sed`
-- container runtime for Kind:
-  - Docker
-  - Podman (rootful machine mode for this Kind + Cilium path)
-- Recommended resource requirements: `6` CPUs, `12` GiB RAM
-
-If you use Docker Desktop, set resources in Docker Desktop settings before cluster creation.
-You can check current Docker resources with:
-`docker info --format 'CPUs={{.NCPU}} TotalMemoryBytes={{.MemTotal}}'`
+- Container runtime: Docker or Podman (rootful mode)
+- Recommended: 6 CPUs, 12 GiB RAM
 
 ```bash
-# 1) Create local config from the kind profile
+# 1. Create local config from the kind profile
 cp config/homelab.kind.example.yaml config/homelab.yaml
 
-# 2) Podman only: set rootful mode + recommended resources
-podman machine stop podman-machine-default
-podman machine set --rootful=true --cpus 6 --memory 12288 podman-machine-default
-podman machine start podman-machine-default
-
-# 3) Create the kind cluster
-# Docker
-kind create cluster --name homelab --config docs/examples/kind-homelab.yaml --wait 0
-
-# Podman (rootful)
-KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name homelab --config docs/examples/kind-homelab.yaml --wait 0
-
-kubectl config use-context kind-homelab
-
-# 4) Confirm your kind network subnet and adjust config/homelab.yaml VIPs if needed
-# Docker:
-docker network inspect kind | jq -r '.[0].IPAM.Config[]?.Subnet | select(test("^[0-9]+(\\.[0-9]+){3}/[0-9]+$"))' | head -n1
-# Podman:
-podman network inspect kind | jq -r '.[0].subnets[]?.subnet | select(test("^[0-9]+(\\.[0-9]+){3}/[0-9]+$"))' | head -n1
-
-# 5) Render config into tfvars/inventory/platform-core values
+# 2. Render config into tfvars/inventory/platform-core values
 python3 scripts/render-config.py --config config/homelab.yaml
 
-# 6) Bootstrap platform
+# 3. Create the kind cluster
+kind create cluster --config docs/examples/kind-homelab.yaml --wait 0
+
+# 4. Bootstrap platform
 cd bootstrap/terraform
 terraform init
 terraform apply -var kubeconfig_context=kind-homelab -var kubeconfig_path=~/.kube/config
 
-# 7) Verify
+# 5. (Optional) Patch CoreDNS for *.local.lab DNS inside the cluster
+bash docs/examples/kind-patch-dns.sh
+
+# 6. Verify
 kubectl get applications -n argocd
 ```
 
-Quick local UI access (default hosts from `config/homelab.kind.example.yaml`):
+### Accessing UIs (Kind + Podman)
 
-- ArgoCD: `https://cd.lab`
-- Gitea: `https://git.lab`
-- MinIO Console: `https://storage.lab`
-- MinIO API (S3): `https://s3.lab`
-- Vault: `https://secrets.lab`
-
-Print a hosts entry and add it to `/etc/hosts`:
+MetalLB IPs are not routable from the host with Kind + Podman. Use port-forwards:
 
 ```bash
-HOSTS=$(kubectl get ingress -A -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{" "}{end}{end}')
-INGRESS_IP=$(kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-echo "$INGRESS_IP $HOSTS"
-```
-
-Initial credentials:
-
-```bash
-# ArgoCD
-echo "username: admin"
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+# ArgoCD UI
+kubectl port-forward svc/argocd-server -n argocd 8080:80
+# -> http://localhost:8080
 
 # Gitea
-kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d; echo
+kubectl port-forward svc/gitea-http -n gitea 3000:3000
+# -> http://localhost:3000
+
+# RustFS Console
+kubectl port-forward svc/rustfs-svc -n rustfs 9001:9001
+# -> http://localhost:9001
+
+# Vault
+kubectl port-forward svc/vault -n vault 8200:8200
+# -> http://localhost:8200
+```
+
+### Initial Credentials
+
+```bash
+# ArgoCD (username: admin)
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+
+# Gitea (username: admin)
 kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d; echo
 
-# MinIO
-kubectl -n minio get secret minio -o jsonpath='{.data.root-user}' | base64 -d; echo
-kubectl -n minio get secret minio -o jsonpath='{.data.root-password}' | base64 -d; echo
+# RustFS
+kubectl -n rustfs get secret rustfs-root-credentials -o jsonpath='{.data.RUSTFS_ACCESS_KEY}' | base64 -d; echo
+kubectl -n rustfs get secret rustfs-root-credentials -o jsonpath='{.data.RUSTFS_SECRET_KEY}' | base64 -d; echo
 
 # Vault
 kubectl -n vault get secret init-credentials -o jsonpath='{.data.root-token}' | base64 -d; echo
 ```
 
-Full local runbook (including Podman/WSL notes, UI access, cleanup):
-`docs/install-kind.md`
+### Cleanup
+
+```bash
+kind delete cluster --name homelab
+```
+
+Full local runbook (including Podman/WSL notes): `docs/install-kind.md`
 
 ## Recommended Deployment (k3s)
 
@@ -128,12 +129,36 @@ For long-lived homelab use, install onto a real host with k3s:
 
 Start here: `docs/install-k3s.md`
 
-## Configuration Profiles
+## Configuration
 
 Use one of the provided templates as your starting point:
 
-- `config/homelab.kind.example.yaml`
-- `config/homelab.k3s.example.yaml`
+- `config/homelab.kind.example.yaml` — local Kind testing
+- `config/homelab.k3s.example.yaml` — real k3s deployment
+
+Key config sections:
+
+```yaml
+dns:
+  base_domain: local.lab       # Hostnames built as {prefix}.{base_domain}
+  prefixes:
+    argocd: cd                 # -> cd.local.lab
+    gitea: git                 # -> git.local.lab
+    keycloak: auth             # -> auth.local.lab
+    traefik: gateway           # -> gateway.local.lab
+    vault: secrets             # -> secrets.local.lab
+    rustfs_console: storage    # -> storage.local.lab (RustFS console)
+    rustfs_api: s3             # -> s3.local.lab (S3 API)
+
+network:
+  traefik_loadbalancer_ip: ... # Traefik Gateway API LB
+  gitea_ssh_loadbalancer_ip: . # Gitea SSH LB
+
+admin:
+  first_name: Lab              # Keycloak admin profile
+  last_name: Admin
+  email: admin@local.lab
+```
 
 Full config reference: `docs/configuration.md`
 
@@ -141,16 +166,16 @@ Full config reference: `docs/configuration.md`
 
 After bootstrap succeeds:
 
-- Clone `homelab/platform-core` from your Gitea instance
-- Edit Helm chart values or add chart directories
-- Push changes to Gitea
-- ArgoCD reconciles automatically
+1. Clone `homelab/platform-core` from your Gitea instance
+2. Edit Helm chart values or add chart directories
+3. Push changes to Gitea
+4. ArgoCD reconciles automatically
 
 ## Documentation Map
 
-- `docs/install-kind.md` - local Kind install and verification
-- `docs/install-k3s.md` - recommended real deployment path
-- `docs/configuration.md` - `homelab.yaml` schema, defaults, environment profiles
-- `docs/ansible-k3s-provisioning.md` - detailed Ansible playbooks and role vars
-- `docs/terraform-bootstrap-handoff.md` - Terraform bootstrap and ArgoCD takeover internals
-- `docs/secrets-management.md` - Vault/ESO/Crossplane architecture
+- `docs/install-kind.md` — local Kind install and verification
+- `docs/install-k3s.md` — recommended real deployment path
+- `docs/configuration.md` — `homelab.yaml` schema, defaults, environment profiles
+- `docs/ansible-k3s-provisioning.md` — detailed Ansible playbooks and role vars
+- `docs/terraform-bootstrap-handoff.md` — Terraform bootstrap and ArgoCD takeover internals
+- `docs/secrets-management.md` — Vault/ESO/Crossplane architecture

@@ -1,0 +1,58 @@
+rustfs:
+  replicaCount: 1
+
+  mode:
+    standalone:
+      enabled: true
+    distributed:
+      enabled: false
+
+  secret:
+    existingSecret: rustfs-root-credentials
+
+  config:
+    rustfs:
+      address: ":9000"
+      console_enable: "true"
+      console_address: ":9001"
+      log_level: "info"
+      region: "us-east-1"
+
+  service:
+    type: ClusterIP
+
+  storageclass:
+    name: standard
+    dataStorageSize: 5Gi
+    logStorageSize: 256Mi
+
+  ingress:
+    enabled: false
+
+  affinity:
+    podAntiAffinity:
+      enabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+gateway:
+  gatewayName: shared-internal
+  gatewayNamespace: traefik
+  oauth2ProxyService:
+    name: oauth2-proxy
+    namespace: oauth2-proxy
+    port: 80
+  apiService:
+    name: rustfs-svc
+    port: 9000
+    host: __RUSTFS_API_HOSTNAME__
+  consoleService:
+    name: rustfs-svc
+    port: 9001
+    host: __RUSTFS_CONSOLE_HOSTNAME__

@@ -1,0 +1,11 @@
+apiVersion: storage.local.lab/v1alpha1
+kind: Postgres
+metadata:
+  name: keycloak-db
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  databaseName: keycloak
+  schema: keycloak

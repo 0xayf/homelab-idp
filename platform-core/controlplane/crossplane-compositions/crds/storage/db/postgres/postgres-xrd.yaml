@@ -1,9 +1,9 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: postgres.storage.platform.lab
+  name: postgres.storage.local.lab
 spec:
-  group: storage.platform.lab
+  group: storage.local.lab
   names:
     kind: Postgres
     plural: postgres
@@ -45,6 +45,46 @@ spec:
                       type: string
                       description: Memory limit
                       default: "512Mi"
+                postInitSQL:
+                  type: array
+                  description: |
+                    Optional SQL statements executed after database creation.
+                    Mapped to CloudNativePG bootstrap initdb postInitApplicationSQL.
+                  items:
+                    type: string
+                postInitSQLConfigMapRef:
+                  type: object
+                  description: |
+                    Optional reference to a ConfigMap containing a SQL script to
+                    execute after database creation.
+                    Mapped to CloudNativePG bootstrap initdb postInitApplicationSQLRefs.configMapRefs.
+                  required:
+                    - name
+                    - key
+                  properties:
+                    name:
+                      type: string
+                      description: Name of the ConfigMap
+                    key:
+                      type: string
+                      description: Key in the ConfigMap containing SQL
+                schema:
+                  type: string
+                  description: |
+                    Optional schema name to create in the database after initialisation.
+                    When set, the composition will automatically run:
+                      CREATE SCHEMA IF NOT EXISTS <schema>
+                      DROP SCHEMA IF EXISTS public
+                    The public schema is dropped to prevent accidental use.
+                  pattern: "^[a-z][a-z0-9_]{0,61}[a-z0-9]$"
+                connectionParams:
+                  type: object
+                  description: |
+                    Optional connection URI query parameters appended to the
+                    generated database URI.
+                    Example: {sslmode: require, search_path: myapp}
+                  additionalProperties:
+                    type: string
             status:
               type: object
               properties:

@@ -1,14 +1,14 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: teams.registry.platform.lab
+  name: teams.registry.local.lab
   annotations:
     argocd.argoproj.io/sync-wave: "1"
   labels:
-    crossplane.io/xrd: teams.registry.platform.lab
+    crossplane.io/xrd: teams.registry.local.lab
 spec:
   compositeTypeRef:
-    apiVersion: registry.platform.lab/v1alpha1
+    apiVersion: registry.local.lab/v1alpha1
     kind: Team
   mode: Pipeline
   pipeline:
@@ -52,7 +52,7 @@ spec:
                 kind: ClusterProviderConfig
                 name: {{ $providerConfigName }}
             ---
-            apiVersion: registry.platform.lab/v1alpha1
+            apiVersion: registry.local.lab/v1alpha1
             kind: Team
             metadata:
               name: {{ $name }}

@@ -1,14 +1,14 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: postgres.storage.platform.lab
+  name: postgres.storage.local.lab
   annotations:
     argocd.argoproj.io/sync-wave: "1"
   labels:
-    crossplane.io/xrd: postgres.storage.platform.lab
+    crossplane.io/xrd: postgres.storage.local.lab
 spec:
   compositeTypeRef:
-    apiVersion: storage.platform.lab/v1alpha1
+    apiVersion: storage.local.lab/v1alpha1
     kind: Postgres
   mode: Pipeline
   pipeline:
@@ -29,9 +29,29 @@ spec:
             {{- $resources := default dict $xr.spec.resources -}}
             {{- $cpuLimit := default "500m" $resources.cpu -}}
             {{- $memoryLimit := default "512Mi" $resources.memory -}}
+            {{- $postInitSQL := default (list) $xr.spec.postInitSQL -}}
+            {{- $postInitSQLConfigMapName := $xr | dig "spec" "postInitSQLConfigMapRef" "name" "" -}}
+            {{- $postInitSQLConfigMapKey := $xr | dig "spec" "postInitSQLConfigMapRef" "key" "" -}}
+            {{- $schema := default "" $xr.spec.schema -}}
+            {{- if $schema -}}
+              {{- $postInitSQL = prepend $postInitSQL (printf "ALTER SCHEMA %s OWNER TO %s" $schema $databaseName) -}}
+              {{- $postInitSQL = prepend $postInitSQL "DROP SCHEMA IF EXISTS public" -}}
+              {{- $postInitSQL = prepend $postInitSQL (printf "CREATE SCHEMA IF NOT EXISTS %s" $schema) -}}
+            {{- end -}}
             {{- $clusterName := printf "pg-%s" $databaseName -}}
             {{- $secretName := printf "%s-db" $databaseName -}}
             {{- $primaryHost := printf "%s-rw.%s.svc.cluster.local" $clusterName $namespace -}}
+            {{- $connectionParams := default (dict) $xr.spec.connectionParams -}}
+            {{- $defaultParams := dict "sslmode" "require" -}}
+            {{- $mergedParams := merge $defaultParams $connectionParams -}}
+            {{- $paramKeys := sortAlpha (keys $mergedParams) -}}
+            {{- $paramPairs := list -}}
+            {{- range $i, $k := $paramKeys -}}
+              {{- $v := get $mergedParams $k -}}
+              {{- $paramPairs = append $paramPairs (printf "%s=%s" $k (urlquery (printf "%v" $v))) -}}
+            {{- end -}}
+            {{- $queryString := join "&" $paramPairs -}}
+            {{- $uriTemplate := printf "postgresql://{{ .username }}:{{ .password | urlquery }}@%s:5432/%s?%s" $primaryHost $databaseName $queryString -}}
             ---
             {{/* Create UserPass claim — delegates password generation and Vault storage */}}
             apiVersion: kubernetes.m.crossplane.io/v1alpha1
@@ -42,7 +62,7 @@ spec:
             spec:
               forProvider:
                 manifest:
-                  apiVersion: secrets.platform.lab/v1alpha1
+                  apiVersion: secrets.local.lab/v1alpha1
                   kind: UserPass
                   metadata:
                     name: {{ $secretName }}
@@ -55,10 +75,8 @@ spec:
                       onlyTemplate: false
                       secretKey: uri
                       values:
-                        host: {{ $primaryHost }}
-                        port: "5432"
-                        database: {{ $databaseName }}
-                      template: {{ `'postgresql://{{ .username }}:{{ .password | urlquery }}@{{ .host }}:{{ .port }}/{{ .database }}'` }}
+                        uri: {{ $uriTemplate | quote }}
+                      template: {{ `'{{ .uri }}'` }}
               readiness:
                 policy: DeriveFromObject
               providerConfigRef:
@@ -88,9 +106,18 @@ spec:
                         owner: {{ $databaseName }}
                         secret:
                           name: {{ $secretName }}
+                        {{- if gt (len $postInitSQL) 0 }}
+                        postInitApplicationSQL:
+                        {{- toYaml $postInitSQL | nindent 26 }}
+                        {{- end }}
+                        {{- if and (ne $postInitSQLConfigMapName "") (ne $postInitSQLConfigMapKey "") }}
+                        postInitApplicationSQLRefs:
+                          configMapRefs:
+                            - name: {{ $postInitSQLConfigMapName }}
+                              key: {{ $postInitSQLConfigMapKey }}
+                        {{- end }}
                     storage:
                       size: {{ $storageSize }}
-                      storageClass: local-path
                     resources:
                       limits:
                         cpu: {{ $cpuLimit | quote }}
@@ -112,7 +139,7 @@ spec:
                     namespace: {{ $namespace }}
                     name: {{ $secretName }}
             ---
-            apiVersion: storage.platform.lab/v1alpha1
+            apiVersion: storage.local.lab/v1alpha1
             kind: Postgres
             metadata:
               name: {{ $xr.metadata.name }}

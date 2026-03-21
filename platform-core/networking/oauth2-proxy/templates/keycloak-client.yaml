@@ -1,0 +1,18 @@
+---
+apiVersion: auth.local.lab/v1alpha1
+kind: Client
+metadata:
+  name: oauth2-proxy
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  clientId: {{ .Values.oidc.clientId }}
+  rootUrl: https://{{ .Values.dashboardHost }}
+  validRedirectUris:
+    - {{ .Values.oidc.redirectUrl }}
+  webOrigins:
+    - https://{{ .Values.dashboardHost }}
+  audienceMapper:
+    enabled: true
