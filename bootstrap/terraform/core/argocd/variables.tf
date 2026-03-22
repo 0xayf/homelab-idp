@@ -9,6 +9,11 @@ variable "namespace" {
   default     = "argocd"
 }
 
+variable "keycloak_hostname" {
+  description = "The fully qualified domain name for the Keycloak instance."
+  type        = string
+}
+
 variable "argocd_chart_version" {
   description = "The version of the ArgoCD Helm chart to deploy."
   type        = string

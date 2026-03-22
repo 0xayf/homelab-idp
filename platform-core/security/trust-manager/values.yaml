@@ -1,0 +1,11 @@
+trust-manager:
+  crds:
+    enabled: true
+    keep: false
+  app:
+    trust:
+      namespace: cert-manager
+  secretTargets:
+    enabled: true
+    authorizedSecrets:
+      - platform-root-ca

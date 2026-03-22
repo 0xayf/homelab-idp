@@ -2,7 +2,7 @@
 #
 # Note: teamId is required by provider Membership resource.
 # You can fetch it from Team managed resource status.atProvider.id.
-apiVersion: registry.platform.lab/v1alpha1
+apiVersion: registry.local.lab/v1alpha1
 kind: Membership
 metadata:
   name: app-demo-split-demo-split-registry

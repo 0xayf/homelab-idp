@@ -15,5 +15,11 @@ vault:
 
   ui:
     enabled: true
-    ingress:
-      hostname: __VAULT_HOSTNAME__
+
+gateway:
+  gatewayName: shared-internal
+  gatewayNamespace: traefik
+  uiService:
+    name: vault-ui
+    port: 8200
+    host: __VAULT_HOSTNAME__

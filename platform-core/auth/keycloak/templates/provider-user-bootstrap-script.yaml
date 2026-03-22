@@ -1,0 +1,464 @@
+{{- $keycloakServiceName := printf "%s-http" .Release.Name -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-provider-user-bootstrap-script
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "6"
+data:
+  run.sh: |
+    #!/bin/sh
+    set -e
+
+    NAMESPACE="{{ .Release.Namespace }}"
+    PROVIDER_CREDENTIALS_SECRET="crossplane-keycloak-provider-credentials"
+    PROVIDER_CREDENTIALS_KEY="credentials"
+    BREAKGLASS_ADMIN_SECRET="{{ .Values.bootstrap.breakglassAdmin.username }}"
+    BREAKGLASS_ADMIN_USERNAME="{{ .Values.bootstrap.breakglassAdmin.username }}"
+    BOOTSTRAP_CLIENT_ID="bootstrap-admin"
+    BOOTSTRAP_CLIENT_SECRET="bootstrap-admin-temp"
+    KEYCLOAK_MANAGEMENT_URL="http://{{ $keycloakServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:9000/health/ready"
+
+    SESSION_TOKEN=""
+
+    log() {
+      echo "==> $(date '+%Y-%m-%d %H:%M:%S') | $@"
+    }
+
+    wait_for_secret_key() {
+      secret_name="$1"
+      secret_key="$2"
+      attempt=0
+
+      while [ "$attempt" -lt 120 ]; do
+        value_b64=$(kubectl -n "$NAMESPACE" get secret "$secret_name" -o "jsonpath={.data.${secret_key}}" 2>/dev/null || true)
+        if [ -n "$value_b64" ]; then
+          value=$(printf '%s' "$value_b64" | base64 -d 2>/dev/null || true)
+          if [ -n "$value" ]; then
+            printf '%s' "$value"
+            return 0
+          fi
+        fi
+
+        attempt=$((attempt + 1))
+        sleep 2
+      done
+
+      return 1
+    }
+
+    read_secret_key_once() {
+      secret_name="$1"
+      secret_key="$2"
+
+      value_b64=$(kubectl -n "$NAMESPACE" get secret "$secret_name" -o "jsonpath={.data.${secret_key}}" 2>/dev/null || true)
+      if [ -z "$value_b64" ]; then
+        return 1
+      fi
+
+      value=$(printf '%s' "$value_b64" | base64 -d 2>/dev/null || true)
+      if [ -z "$value" ]; then
+        return 1
+      fi
+
+      printf '%s' "$value"
+    }
+
+    wait_for_http_200() {
+      url="$1"
+      attempt=0
+      http_code=""
+
+      while [ "$attempt" -lt 120 ]; do
+        http_code=$(curl -s -o /tmp/http-check.out -w "%{http_code}" "$url" || true)
+        if [ "$http_code" = "200" ]; then
+          return 0
+        fi
+
+        attempt=$((attempt + 1))
+        sleep 2
+      done
+
+      log "ERROR: endpoint $url not ready (last HTTP code: $http_code)"
+      return 1
+    }
+
+    get_token_once() {
+      url="$1"
+      username="$2"
+      password="$3"
+      client_id="$4"
+
+      curl -s -X POST \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        --data-urlencode "client_id=$client_id" \
+        --data-urlencode "grant_type=password" \
+        --data-urlencode "username=$username" \
+        --data-urlencode "password=$password" \
+        "$url"
+    }
+
+    get_token() {
+      url="$1"
+      username="$2"
+      password="$3"
+      client_id="$4"
+      response=""
+
+      attempt=0
+      while [ "$attempt" -lt 60 ]; do
+        response=$(get_token_once "$url" "$username" "$password" "$client_id")
+
+        access_token=$(printf '%s' "$response" | jq -r '.access_token // empty')
+        if [ -n "$access_token" ]; then
+          printf '%s' "$response"
+          return 0
+        fi
+
+        attempt=$((attempt + 1))
+        sleep 2
+      done
+
+      printf '%s' "$response"
+      return 1
+    }
+
+    try_login() {
+      username="$1"
+      password="$2"
+      label="$3"
+
+      response=$(get_token_once "$MASTER_TOKEN_URL" "$username" "$password" "admin-cli" || true)
+      access_token=$(printf '%s' "$response" | jq -r '.access_token // empty')
+      if [ -z "$access_token" ]; then
+        return 1
+      fi
+
+      SESSION_TOKEN="$access_token"
+      log "Authenticated as $label."
+      return 0
+    }
+
+    try_login_with_secret() {
+      username="$1"
+      secret_name="$2"
+      secret_key="$3"
+      label="$4"
+
+      password=$(read_secret_key_once "$secret_name" "$secret_key" || true)
+      if [ -z "$password" ]; then
+        return 1
+      fi
+
+      try_login "$username" "$password" "$label"
+    }
+
+    try_login_client_credentials() {
+      client_id="$1"
+      client_secret="$2"
+      label="$3"
+
+      response=$(curl -s -X POST \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        --data-urlencode "client_id=$client_id" \
+        --data-urlencode "client_secret=$client_secret" \
+        --data-urlencode "grant_type=client_credentials" \
+        "$MASTER_TOKEN_URL" || true)
+
+      access_token=$(printf '%s' "$response" | jq -r '.access_token // empty')
+      if [ -z "$access_token" ]; then
+        return 1
+      fi
+
+      SESSION_TOKEN="$access_token"
+      log "Authenticated as $label."
+      return 0
+    }
+
+    delete_client_if_exists() {
+      client_id_str="$1"
+      label="$2"
+
+      if [ -z "$client_id_str" ]; then
+        return 0
+      fi
+
+      internal_id=$(curl -s -H "Authorization: Bearer $SESSION_TOKEN" \
+        "$MASTER_API_URL/clients?clientId=$client_id_str" | jq -r '.[0].id // empty')
+
+      if [ -z "$internal_id" ]; then
+        return 0
+      fi
+
+      http_code=$(curl -s -o /tmp/keycloak-delete-client.out -w "%{http_code}" -X DELETE \
+        -H "Authorization: Bearer $SESSION_TOKEN" \
+        "$MASTER_API_URL/clients/$internal_id")
+
+      if [ "$http_code" = "204" ] || [ "$http_code" = "404" ]; then
+        log "Deleted $label client '$client_id_str'."
+        return 0
+      fi
+
+      log "WARN: could not delete $label client '$client_id_str' (HTTP $http_code)"
+    }
+
+    get_user_id() {
+      username="$1"
+
+      curl -s -H "Authorization: Bearer $SESSION_TOKEN" \
+        "$MASTER_API_URL/users?username=$username&exact=true" | jq -r '.[0].id // empty'
+    }
+
+    ensure_user_exists() {
+      username="$1"
+      label="$2"
+
+      user_id=$(get_user_id "$username")
+      if [ -n "$user_id" ]; then
+        printf '%s' "$user_id"
+        return 0
+      fi
+
+      payload=$(jq -cn --arg username "$username" '{username:$username,enabled:true}')
+      http_code=$(curl -s -o /tmp/keycloak-create-user.out -w "%{http_code}" -X POST \
+        -H "Authorization: Bearer $SESSION_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "$MASTER_API_URL/users")
+
+      if [ "$http_code" != "201" ] && [ "$http_code" != "409" ]; then
+        log "ERROR: failed to create $label user '$username' (HTTP $http_code)"
+        cat /tmp/keycloak-create-user.out
+        exit 1
+      fi
+
+      user_id=$(get_user_id "$username")
+      if [ -z "$user_id" ]; then
+        log "ERROR: $label user '$username' missing after create attempt"
+        exit 1
+      fi
+
+      printf '%s' "$user_id"
+    }
+
+    reset_user_password() {
+      user_id="$1"
+      password="$2"
+      label="$3"
+
+      payload=$(jq -cn --arg value "$password" '{type:"password",temporary:false,value:$value}')
+      http_code=$(curl -s -o /tmp/keycloak-reset-password.out -w "%{http_code}" -X PUT \
+        -H "Authorization: Bearer $SESSION_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "$MASTER_API_URL/users/$user_id/reset-password")
+
+      if [ "$http_code" != "204" ]; then
+        log "ERROR: failed resetting $label password (HTTP $http_code)"
+        cat /tmp/keycloak-reset-password.out
+        exit 1
+      fi
+    }
+
+    load_admin_role_payloads() {
+      ADMIN_CLIENT_ID=$(curl -s -H "Authorization: Bearer $SESSION_TOKEN" \
+        "$MASTER_API_URL/clients?clientId=realm-management" | jq -r '.[0].id // empty')
+
+      if [ -n "$ADMIN_CLIENT_ID" ]; then
+        ADMIN_CLIENT_ROLES_PAYLOAD=$(curl -s -H "Authorization: Bearer $SESSION_TOKEN" \
+          "$MASTER_API_URL/clients/$ADMIN_CLIENT_ID/roles/realm-admin")
+        role_name=$(printf '%s' "$ADMIN_CLIENT_ROLES_PAYLOAD" | jq -r '.name // empty')
+
+        if [ "$role_name" != "realm-admin" ]; then
+          log "ERROR: could not read realm-admin role from realm-management client"
+          printf '%s\n' "$ADMIN_CLIENT_ROLES_PAYLOAD"
+          exit 1
+        fi
+
+        ADMIN_CLIENT_ROLES_PAYLOAD="[$ADMIN_CLIENT_ROLES_PAYLOAD]"
+      else
+        ADMIN_CLIENT_ID=$(curl -s -H "Authorization: Bearer $SESSION_TOKEN" \
+          "$MASTER_API_URL/clients?clientId=master-realm" | jq -r '.[0].id // empty')
+
+        if [ -z "$ADMIN_CLIENT_ID" ]; then
+          log "ERROR: could not resolve admin client id (realm-management/master-realm)"
+          exit 1
+        fi
+
+        ADMIN_CLIENT_ROLES_PAYLOAD=$(curl -s -H "Authorization: Bearer $SESSION_TOKEN" \
+          "$MASTER_API_URL/clients/$ADMIN_CLIENT_ID/roles?max=200")
+        role_count=$(printf '%s' "$ADMIN_CLIENT_ROLES_PAYLOAD" | jq 'length')
+
+        if [ "$role_count" -le 0 ]; then
+          log "ERROR: no roles returned for master-realm admin client"
+          printf '%s\n' "$ADMIN_CLIENT_ROLES_PAYLOAD"
+          exit 1
+        fi
+      fi
+
+      MASTER_ADMIN_ROLE_PAYLOAD=$(curl -s -H "Authorization: Bearer $SESSION_TOKEN" \
+        "$MASTER_API_URL/roles/admin")
+      master_admin_role_name=$(printf '%s' "$MASTER_ADMIN_ROLE_PAYLOAD" | jq -r '.name // empty')
+
+      if [ "$master_admin_role_name" != "admin" ]; then
+        log "ERROR: could not read master realm admin role"
+        printf '%s\n' "$MASTER_ADMIN_ROLE_PAYLOAD"
+        exit 1
+      fi
+    }
+
+    assign_admin_roles() {
+      user_id="$1"
+      username="$2"
+      label="$3"
+
+      client_http_code=$(curl -s -o /tmp/keycloak-assign-client-role.out -w "%{http_code}" -X POST \
+        -H "Authorization: Bearer $SESSION_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$ADMIN_CLIENT_ROLES_PAYLOAD" \
+        "$MASTER_API_URL/users/$user_id/role-mappings/clients/$ADMIN_CLIENT_ID")
+
+      if [ "$client_http_code" != "204" ]; then
+        log "ERROR: failed assigning admin client role mappings to $label user '$username' (HTTP $client_http_code)"
+        cat /tmp/keycloak-assign-client-role.out
+        exit 1
+      fi
+
+      realm_http_code=$(curl -s -o /tmp/keycloak-assign-master-admin-role.out -w "%{http_code}" -X POST \
+        -H "Authorization: Bearer $SESSION_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "[$MASTER_ADMIN_ROLE_PAYLOAD]" \
+        "$MASTER_API_URL/users/$user_id/role-mappings/realm")
+
+      if [ "$realm_http_code" != "204" ]; then
+        log "ERROR: failed assigning master realm admin role to $label user '$username' (HTTP $realm_http_code)"
+        cat /tmp/keycloak-assign-master-admin-role.out
+        exit 1
+      fi
+    }
+
+    delete_user_if_exists() {
+      username="$1"
+      label="$2"
+      strict="$3"
+
+      if [ -z "$username" ]; then
+        return 0
+      fi
+
+      user_id=$(get_user_id "$username")
+      if [ -z "$user_id" ]; then
+        return 0
+      fi
+
+      http_code=$(curl -s -o /tmp/keycloak-delete-user.out -w "%{http_code}" -X DELETE \
+        -H "Authorization: Bearer $SESSION_TOKEN" \
+        "$MASTER_API_URL/users/$user_id")
+
+      if [ "$http_code" = "204" ] || [ "$http_code" = "404" ]; then
+        return 0
+      fi
+
+      if [ "$strict" = "true" ]; then
+        log "ERROR: could not delete $label user '$username' (HTTP $http_code)"
+        cat /tmp/keycloak-delete-user.out
+        exit 1
+      fi
+
+      log "WARN: could not delete $label user '$username' (HTTP $http_code)"
+    }
+
+    log "--- Keycloak Provider User Bootstrap Started ---"
+
+    log "Installing dependencies..."
+    apk add --no-cache curl jq kubectl > /dev/null
+    log "Dependencies installed."
+
+    log "Waiting for secret $PROVIDER_CREDENTIALS_SECRET/$PROVIDER_CREDENTIALS_KEY..."
+    PROVIDER_JSON=$(wait_for_secret_key "$PROVIDER_CREDENTIALS_SECRET" "$PROVIDER_CREDENTIALS_KEY") || {
+      log "ERROR: timed out waiting for provider credentials secret"
+      exit 1
+    }
+
+    PROVIDER_URL=$(printf '%s' "$PROVIDER_JSON" | jq -r '.url // empty')
+    PROVIDER_BASE_PATH=$(printf '%s' "$PROVIDER_JSON" | jq -r '.base_path // ""')
+    PROVIDER_REALM=$(printf '%s' "$PROVIDER_JSON" | jq -r '.realm // empty')
+    PROVIDER_CLIENT_ID=$(printf '%s' "$PROVIDER_JSON" | jq -r '.client_id // empty')
+    PROVIDER_USERNAME=$(printf '%s' "$PROVIDER_JSON" | jq -r '.username // empty')
+    PROVIDER_PASSWORD=$(printf '%s' "$PROVIDER_JSON" | jq -r '.password // empty')
+    PROVIDER_URL="${PROVIDER_URL%/}"
+
+    if [ -z "$PROVIDER_URL" ] || [ -z "$PROVIDER_REALM" ] || [ -z "$PROVIDER_CLIENT_ID" ] || [ -z "$PROVIDER_USERNAME" ] || [ -z "$PROVIDER_PASSWORD" ]; then
+      log "ERROR: provider credentials secret is missing one of required fields: url, realm, client_id, username, password"
+      exit 1
+    fi
+
+    case "$PROVIDER_BASE_PATH" in
+      "")
+        API_BASE="$PROVIDER_URL"
+        ;;
+      /*)
+        API_BASE="${PROVIDER_URL}${PROVIDER_BASE_PATH}"
+        ;;
+      *)
+        API_BASE="${PROVIDER_URL}/${PROVIDER_BASE_PATH}"
+        ;;
+    esac
+    API_BASE="${API_BASE%/}"
+
+    MASTER_API_URL="$API_BASE/admin/realms/master"
+    MASTER_TOKEN_URL="$API_BASE/realms/master/protocol/openid-connect/token"
+    PROVIDER_TOKEN_URL="$API_BASE/realms/${PROVIDER_REALM}/protocol/openid-connect/token"
+
+    log "Waiting for Keycloak management readiness endpoint..."
+    wait_for_http_200 "$KEYCLOAK_MANAGEMENT_URL"
+
+    log "Checking whether provider credentials already work..."
+    existing_provider_token_response=$(get_token_once "$PROVIDER_TOKEN_URL" "$PROVIDER_USERNAME" "$PROVIDER_PASSWORD" "$PROVIDER_CLIENT_ID" || true)
+    existing_provider_access_token=$(printf '%s' "$existing_provider_token_response" | jq -r '.access_token // empty')
+    if [ -n "$existing_provider_access_token" ]; then
+      SESSION_TOKEN="$existing_provider_access_token"
+      delete_client_if_exists "$BOOTSTRAP_CLIENT_ID" "bootstrap" || true
+      log "Provider credentials already valid; skipping bootstrap."
+      exit 0
+    fi
+
+    if try_login_with_secret "$BREAKGLASS_ADMIN_USERNAME" "$BREAKGLASS_ADMIN_SECRET" "password" "breakglass admin"; then
+      :
+    elif try_login_client_credentials "$BOOTSTRAP_CLIENT_ID" "$BOOTSTRAP_CLIENT_SECRET" "bootstrap service account"; then
+      :
+    else
+      log "ERROR: neither breakglass admin nor bootstrap service account credentials are usable"
+      exit 1
+    fi
+
+    load_admin_role_payloads
+
+    log "Ensuring provider user '$PROVIDER_USERNAME' exists in master realm..."
+    USER_ID=$(ensure_user_exists "$PROVIDER_USERNAME" "provider")
+
+    log "Setting provider user password from provider secret..."
+    reset_user_password "$USER_ID" "$PROVIDER_PASSWORD" "provider"
+
+    log "Ensuring provider user has required master realm admin roles..."
+    assign_admin_roles "$USER_ID" "$PROVIDER_USERNAME" "provider"
+
+    log "Validating provider credentials token request..."
+    provider_token_response=$(get_token "$PROVIDER_TOKEN_URL" "$PROVIDER_USERNAME" "$PROVIDER_PASSWORD" "$PROVIDER_CLIENT_ID")
+
+    provider_access_token=$(printf '%s' "$provider_token_response" | jq -r '.access_token // empty')
+    if [ -z "$provider_access_token" ]; then
+      log "ERROR: provider user credentials are not valid for token endpoint"
+      printf '%s\n' "$provider_token_response"
+      exit 1
+    fi
+
+    SESSION_TOKEN="$provider_access_token"
+
+    log "Cleaning up bootstrap service account client..."
+    delete_client_if_exists "$BOOTSTRAP_CLIENT_ID" "bootstrap"
+
+    log "--- Keycloak Provider User Bootstrap Finished Successfully ---"

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: keycloak
+description: Wrapper chart to deploy Keycloak and configure platform OIDC.
+version: 0.1.0
+dependencies:
+  - name: keycloakx
+    version: "7.1.9"
+    repository: "https://codecentric.github.io/helm-charts"
+    alias: keycloak

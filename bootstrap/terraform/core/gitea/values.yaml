@@ -31,3 +31,5 @@ postgresql-ha:
 persistence:
   enabled: true
   size: 5Gi
+  labels:
+    app.kubernetes.io/managed-by: argocd

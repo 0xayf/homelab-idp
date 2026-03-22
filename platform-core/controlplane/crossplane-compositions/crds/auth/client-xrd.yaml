@@ -1,0 +1,112 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: clients.auth.local.lab
+spec:
+  group: auth.local.lab
+  names:
+    kind: Client
+    plural: clients
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - clientId
+                - rootUrl
+                - validRedirectUris
+                - webOrigins
+              properties:
+                clientId:
+                  type: string
+                  description: Client ID used by OIDC consumers.
+                displayName:
+                  type: string
+                  description: Human-readable name shown in Keycloak.
+                realmId:
+                  type: string
+                  default: lab
+                  description: Keycloak realm ID where the client is managed.
+                accessType:
+                  type: string
+                  enum:
+                    - CONFIDENTIAL
+                    - PUBLIC
+                  default: CONFIDENTIAL
+                standardFlowEnabled:
+                  type: boolean
+                  default: true
+                serviceAccountsEnabled:
+                  type: boolean
+                  default: false
+                directAccessGrantsEnabled:
+                  type: boolean
+                  default: false
+                rootUrl:
+                  type: string
+                validRedirectUris:
+                  type: array
+                  items:
+                    type: string
+                webOrigins:
+                  type: array
+                  items:
+                    type: string
+                groupMembershipMapper:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    name:
+                      type: string
+                      default: groups
+                    claimName:
+                      type: string
+                      default: groups
+                    fullPath:
+                      type: boolean
+                      default: false
+                    addToIdToken:
+                      type: boolean
+                      default: true
+                    addToAccessToken:
+                      type: boolean
+                      default: true
+                    addToUserinfo:
+                      type: boolean
+                      default: true
+                audienceMapper:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    includedClientAudience:
+                      type: string
+                      description: Client ID to include in the aud claim. Defaults to clientId.
+                    addToIdToken:
+                      type: boolean
+                      default: true
+                    addToAccessToken:
+                      type: boolean
+                      default: true
+                    addToUserinfo:
+                      type: boolean
+                      default: false
+                    addToIntrospectionToken:
+                      type: boolean
+                      default: true
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                managedClientName:
+                  type: string

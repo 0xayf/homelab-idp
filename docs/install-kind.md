@@ -31,14 +31,9 @@ The default config is single-node (control-plane only) to reduce local memory pr
 ### Docker
 
 If you use Docker Desktop, set resources to at least `6` CPUs and `12` GiB RAM in Docker Desktop settings before creating the cluster.
-You can check current Docker resources with:
 
 ```bash
-docker info --format 'CPUs={{.NCPU}} TotalMemoryBytes={{.MemTotal}}'
-```
-
-```bash
-kind create cluster --name homelab --config docs/examples/kind-homelab.yaml --wait 0
+kind create cluster --config docs/examples/kind-homelab.yaml --wait 0
 kubectl config use-context kind-homelab
 ```
 
@@ -52,12 +47,8 @@ podman machine stop podman-machine-default
 podman machine set --rootful=true --cpus 6 --memory 12288 podman-machine-default
 podman machine start podman-machine-default
 
-# Verify mode and resources
-podman machine inspect podman-machine-default --format '{{.Rootful}} CPUs={{.Resources.CPUs}} MemoryMiB={{.Resources.Memory}}'
-podman info --format 'rootless={{.Host.Security.Rootless}} cgroup={{.Host.CgroupsVersion}}'
-
-# Create kind cluster with Podman provider
-KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name homelab --config docs/examples/kind-homelab.yaml --wait 0
+# Create kind cluster
+kind create cluster --config docs/examples/kind-homelab.yaml --wait 0
 kubectl config use-context kind-homelab
 ```
 
@@ -76,7 +67,7 @@ podman network inspect kind | jq -r '.[0].subnets[]?.subnet | select(test("^[0-9
 Pick an IP range and two VIPs inside that subnet, then edit `config/homelab.yaml`:
 
 - `network.metallb_ip_range`
-- `network.ingress_nginx_loadbalancer_ip`
+- `network.traefik_loadbalancer_ip`
 - `network.gitea_ssh_loadbalancer_ip`
 
 For Kind, keep:
@@ -85,7 +76,8 @@ For Kind, keep:
 
 Optional:
 
-- delete `network.gitea_ssh_allowed_sources` to allow SSH from all source ranges in local testing
+- Delete `network.gitea_ssh_allowed_sources` to allow SSH from all sources in local testing
+- Delete `network.traefik_dashboard_allowed_sources` to allow dashboard access from all sources
 
 ## 4) Render bootstrap files
 
@@ -109,7 +101,17 @@ terraform init
 terraform apply -var kubeconfig_context=kind-homelab -var kubeconfig_path=~/.kube/config
 ```
 
-## 6) Verify platform health
+## 6) Patch CoreDNS (recommended)
+
+Services like the Gitea Actions runner need to resolve `*.local.lab` hostnames inside the cluster. Run the provided script to add DNS entries pointing to the Traefik LoadBalancer IP:
+
+```bash
+bash docs/examples/kind-patch-dns.sh
+```
+
+This is only needed for Kind — on a real k3s cluster, your network DNS handles resolution.
+
+## 7) Verify platform health
 
 ```bash
 kubectl get applications -n argocd
@@ -117,73 +119,61 @@ kubectl get applications -n argocd
 
 Expected steady state: all applications `Synced` and `Healthy`.
 
-Check Gitea SSH VIP:
+## 8) Access UIs
+
+With Kind + Podman, MetalLB IPs are not routable from the host. Use port-forwards:
 
 ```bash
-kubectl -n gitea get svc gitea-ssh -o wide
+# ArgoCD UI (username: admin)
+kubectl port-forward svc/argocd-server -n argocd 8080:80
+# -> http://localhost:8080
+
+# Gitea (username: admin)
+kubectl port-forward svc/gitea-http -n gitea 3000:3000
+# -> http://localhost:3000
+
+# RustFS Console (S3-compatible object storage)
+kubectl port-forward svc/rustfs-svc -n rustfs 9001:9001
+# -> http://localhost:9001
+
+# Vault UI
+kubectl port-forward svc/vault -n vault 8200:8200
+# -> http://localhost:8200
 ```
 
-## 7) Access UIs (local)
-
-Check ingress endpoints:
+With Kind + Docker (MetalLB IPs may be routable), add hosts entries:
 
 ```bash
-kubectl get ingress -A
+TRAEFIK_IP=$(kubectl get svc traefik -n traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "$TRAEFIK_IP auth.local.lab cd.local.lab git.local.lab gateway.local.lab storage.local.lab s3.local.lab secrets.local.lab"
 ```
 
-If the ingress hostnames do not resolve locally, map them to the ingress VIP:
+Add that line to `/etc/hosts`, then access services at their `*.local.lab` hostnames.
 
-```bash
-HOSTS=$(kubectl get ingress -A -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{" "}{end}{end}')
-INGRESS_IP=$(kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-echo "$INGRESS_IP $HOSTS"
-```
-
-Add that output line to `/etc/hosts`.
-
-Default UI/API endpoints from `config/homelab.kind.example.yaml`:
-
-- ArgoCD: `https://cd.lab`
-- Gitea: `https://git.lab`
-- MinIO API (S3): `https://s3.lab`
-- MinIO Console: `https://storage.lab`
-- Vault UI: `https://secrets.lab`
-
-Credential commands:
+## 9) Credentials
 
 ```bash
 # ArgoCD
-echo "username: admin"
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
 
 # Gitea
-kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d; echo
 kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d; echo
 
-# MinIO (console and S3)
-kubectl -n minio get secret minio -o jsonpath='{.data.root-user}' | base64 -d; echo
-kubectl -n minio get secret minio -o jsonpath='{.data.root-password}' | base64 -d; echo
+# RustFS
+kubectl -n rustfs get secret rustfs-root-credentials -o jsonpath='{.data.RUSTFS_ACCESS_KEY}' | base64 -d; echo
+kubectl -n rustfs get secret rustfs-root-credentials -o jsonpath='{.data.RUSTFS_SECRET_KEY}' | base64 -d; echo
 
-# Vault (bootstrap root token)
+# Vault
 kubectl -n vault get secret init-credentials -o jsonpath='{.data.root-token}' | base64 -d; echo
+
+# Keycloak lab-admin (created by Crossplane after bootstrap)
+kubectl -n keycloak get secret lab-admin -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
-Port-forward fallback for ArgoCD:
+## 10) Teardown
 
 ```bash
-kubectl -n argocd port-forward svc/argocd-server 8080:80
-```
-
-Open `http://localhost:8080`.
-
-## 8) Teardown
-
-```bash
-# Docker
 kind delete cluster --name homelab
-
-# Podman
-KIND_EXPERIMENTAL_PROVIDER=podman kind delete cluster --name homelab
 ```
 
 ## Troubleshooting: Cilium Init errors on Podman
@@ -202,24 +192,19 @@ kubectl -n cilium describe pod $(kubectl -n cilium get pod -l k8s-app=cilium -o 
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.taints[*]}{.key}{":"}{.effect}{";"}{end}{"\n"}{end}'
 ```
 
-Important: `sudo podman ...` does not change Podman machine mode.
-
 Use a rootful Podman machine for this Kind + Cilium path:
 
 ```bash
 podman machine stop podman-machine-default
 podman machine set --rootful=true --cpus 6 --memory 12288 podman-machine-default
 podman machine start podman-machine-default
-
-podman machine inspect podman-machine-default --format '{{.Rootful}} CPUs={{.Resources.CPUs}} MemoryMiB={{.Resources.Memory}}'
-podman info --format 'rootless={{.Host.Security.Rootless}} cgroup={{.Host.CgroupsVersion}}'
 ```
 
 Recreate Kind and verify bpffs mount inside all Kind node containers before Terraform:
 
 ```bash
-KIND_EXPERIMENTAL_PROVIDER=podman kind delete cluster --name homelab
-KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name homelab --config docs/examples/kind-homelab.yaml --wait 0
+kind delete cluster --name homelab
+kind create cluster --config docs/examples/kind-homelab.yaml --wait 0
 kubectl config use-context kind-homelab
 
 for n in $(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}'); do

@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provider-keycloak
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: provider-keycloak-credentials-reader
+  namespace: keycloak
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["crossplane-keycloak-provider-credentials"]
+    verbs: ["get", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: provider-keycloak-credentials-reader
+  namespace: keycloak
+subjects:
+  - kind: ServiceAccount
+    name: provider-keycloak
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: provider-keycloak-credentials-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: provider-keycloak-runtime-config
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          serviceAccountName: provider-keycloak
+          containers:
+            - name: package-runtime
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-keycloak
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-keycloak:v2.14.0
+  runtimeConfigRef:
+    name: provider-keycloak-runtime-config
+---
+apiVersion: keycloak.m.crossplane.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: keycloak-provider-config
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: keycloak
+      name: crossplane-keycloak-provider-credentials
+      key: credentials

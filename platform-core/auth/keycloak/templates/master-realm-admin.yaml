@@ -1,0 +1,60 @@
+{{- $breakglassAdmin := .Values.bootstrap.breakglassAdmin -}}
+---
+apiVersion: user.keycloak.m.crossplane.io/v1alpha1
+kind: User
+metadata:
+  name: "{{ $breakglassAdmin.username }}"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  forProvider:
+    realmId: master
+    username: "{{ $breakglassAdmin.username }}"
+    enabled: true
+    initialPassword:
+      - temporary: false
+        valueSecretRef:
+          name: "{{ $breakglassAdmin.username }}"
+          key: password
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: keycloak-provider-config
+---
+apiVersion: role.keycloak.m.crossplane.io/v1alpha1
+kind: Role
+metadata:
+  name: admin-role
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  forProvider:
+    realmId: master
+    name: admin
+    import: true
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: keycloak-provider-config
+---
+apiVersion: user.keycloak.m.crossplane.io/v1alpha1
+kind: Roles
+metadata:
+  name: admin-role-bindings
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  forProvider:
+    realmId: master
+    exhaustive: false
+    userIdRef:
+      name: "{{ $breakglassAdmin.username }}"
+    roleIdsRefs:
+      - name: admin-role
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: keycloak-provider-config

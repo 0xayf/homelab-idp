@@ -52,3 +52,13 @@ variable "gitea_ssh_allowed_sources" {
   type        = list(string)
   default     = []
 }
+
+variable "keycloak_hostname" {
+  description = "The fully qualified domain name for Keycloak."
+  type        = string
+}
+
+variable "traefik_hostname" {
+  description = "The fully qualified domain name for the Traefik dashboard."
+  type        = string
+}

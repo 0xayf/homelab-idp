@@ -1,0 +1,44 @@
+oidcConsumerNamespaces:
+  - argocd
+  - gitea
+  - oauth2-proxy
+  - vault
+
+sharedGatewayNamespaces:
+  - traefik
+  - argocd
+  - gitea
+  - keycloak
+  - rustfs
+  - vault
+
+argo-cd:
+  crds:
+    keep: true
+  configs:
+    params:
+      server.insecure: "true"
+    cm:
+      url: https://__ARGOCD_HOSTNAME__
+      oidc.config: |
+        name: Keycloak
+        issuer: https://__KEYCLOAK_HOSTNAME__/realms/lab
+        clientID: argocd
+        clientSecret: $oidc.keycloak.clientSecret
+        requestedScopes: ["openid", "profile", "email"]
+        rootCA: $oidc.keycloak.rootCA
+    rbac:
+      policy.default: role:readonly
+      policy.csv: |
+        g, lab-admins, role:admin
+      scopes: "[groups, preferred_username]"
+  server:
+    url: https://__ARGOCD_HOSTNAME__
+
+gateway:
+  gatewayName: shared-internal
+  gatewayNamespace: traefik
+  serverService:
+    name: argocd-server
+    port: 80
+    host: __ARGOCD_HOSTNAME__

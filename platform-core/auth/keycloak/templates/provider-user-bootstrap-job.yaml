@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-provider-user-bootstrap
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  template:
+    spec:
+      serviceAccountName: keycloak-provider-user-bootstrap-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: alpine:3.22.1
+          command: ["/bin/sh", "/config/run.sh"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: keycloak-provider-user-bootstrap-script
+            defaultMode: 0755

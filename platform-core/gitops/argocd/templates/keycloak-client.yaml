@@ -1,0 +1,16 @@
+---
+apiVersion: auth.local.lab/v1alpha1
+kind: Client
+metadata:
+  name: argocd
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  clientId: argocd
+  rootUrl: https://cd.local.lab
+  validRedirectUris:
+    - https://cd.local.lab/auth/callback
+  webOrigins:
+    - https://cd.local.lab

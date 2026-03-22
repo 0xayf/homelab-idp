@@ -1,0 +1,128 @@
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dashboard-ip-allowlist
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  ipAllowList:
+    sourceRange: {{ .Values.dashboard.accessCidrs | toJson }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dashboard-auth
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  forwardAuth:
+    address: http://{{ .Values.dashboard.oauth2ProxyService.name }}.{{ .Values.dashboard.oauth2ProxyService.namespace }}.svc.cluster.local/
+    trustForwardHeader: true
+    authResponseHeaders:
+      - X-Auth-Request-User
+      - X-Auth-Request-Email
+      - X-Auth-Request-Preferred-Username
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dashboard-secure-headers
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  headers:
+    browserXssFilter: true
+    contentTypeNosniff: true
+    forceSTSHeader: true
+    frameDeny: true
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    stsPreload: true
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gateway-dashboard-http
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  parentRefs:
+    - name: {{ .Values.sharedGateway.name }}
+      namespace: {{ .Release.Namespace }}
+      sectionName: web
+  hostnames:
+    - {{ .Values.dashboard.host }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            port: 443
+            statusCode: 301
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gateway-dashboard-https
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  parentRefs:
+    - name: {{ .Values.sharedGateway.name }}
+      namespace: {{ .Release.Namespace }}
+      sectionName: websecure
+  hostnames:
+    - {{ .Values.dashboard.host }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /oauth2
+      backendRefs:
+        - name: {{ .Values.dashboard.oauth2ProxyService.name }}
+          namespace: {{ .Values.dashboard.oauth2ProxyService.namespace }}
+          port: {{ .Values.dashboard.oauth2ProxyService.port }}
+    - matches:
+        - path:
+            type: Exact
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /dashboard/
+            statusCode: 301
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: gateway-dashboard
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`{{ .Values.dashboard.host }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))
+      middlewares:
+        - name: dashboard-ip-allowlist
+        - name: dashboard-auth
+        - name: dashboard-secure-headers
+      services:
+        - kind: TraefikService
+          name: api@internal

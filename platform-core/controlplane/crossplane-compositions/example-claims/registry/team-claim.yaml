@@ -1,5 +1,5 @@
 # Example: Create team with access to my-app repository
-apiVersion: registry.platform.lab/v1alpha1
+apiVersion: registry.local.lab/v1alpha1
 kind: Team
 metadata:
   name: demo-split-registry

@@ -1,0 +1,202 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actions-runner-token-script
+  namespace: {{ .Release.Namespace }}
+data:
+  run.sh: |
+    #!/bin/sh
+    set -e
+
+    GITEA_URL="{{ .Values.gitea.baseUrl }}"
+    NAMESPACE="{{ .Release.Namespace }}"
+    ADMIN_CREDENTIALS_SECRET="gitea-admin"
+    TOKEN_SECRET="gitea-actions-runner-token-source"
+    ORG_NAME="homelab"
+
+    log() {
+      echo "==> $(date '+%Y-%m-%d %H:%M:%S') | $@"
+    }
+
+    log "--- Actions Runner Token Script Started ---"
+
+    log "Installing dependencies..."
+    apk add --no-cache curl jq kubectl > /dev/null
+    log "Dependencies installed."
+
+    # Read admin credentials
+    log "Reading admin credentials from secret $ADMIN_CREDENTIALS_SECRET..."
+    ADMIN_USERNAME=$(kubectl -n "$NAMESPACE" get secret "$ADMIN_CREDENTIALS_SECRET" \
+      -o jsonpath='{.data.username}' | base64 -d)
+    ADMIN_PASSWORD=$(kubectl -n "$NAMESPACE" get secret "$ADMIN_CREDENTIALS_SECRET" \
+      -o jsonpath='{.data.password}' | base64 -d)
+
+    if [ -z "$ADMIN_USERNAME" ] || [ -z "$ADMIN_PASSWORD" ]; then
+      log "ERROR: Failed to read admin credentials"
+      exit 1
+    fi
+    log "Admin credentials loaded."
+
+    # Check if token secret already exists — if so, nothing to do
+    log "Checking for existing runner token secret $TOKEN_SECRET..."
+    EXISTING_TOKEN=$(kubectl -n "$NAMESPACE" get secret "$TOKEN_SECRET" \
+      -o "jsonpath={.data.token}" 2>/dev/null | base64 -d 2>/dev/null || true)
+
+    if [ -n "$EXISTING_TOKEN" ]; then
+      log "Runner token already present in secret $TOKEN_SECRET — exiting"
+      exit 0
+    fi
+    log "No existing token found."
+
+    # Check how many runners are already registered in the org
+    log "Checking for registered runners in org $ORG_NAME..."
+    RUNNERS_RESPONSE=$(curl -s -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" \
+      "$GITEA_URL/api/v1/orgs/$ORG_NAME/actions/runners" || true)
+
+    RUNNER_COUNT=$(echo "$RUNNERS_RESPONSE" | jq '.total_count // 0' 2>/dev/null || echo "0")
+
+    if [ "$RUNNER_COUNT" -gt 0 ]; then
+      log "Warning: $RUNNER_COUNT runner(s) already registered in org $ORG_NAME but no local token secret found"
+      log "Generating a fresh registration token to allow runner (re-)registration"
+    else
+      log "No runners registered — generating registration token"
+    fi
+
+    # Request a runner registration token from the Gitea admin API
+    log "Requesting runner registration token for org $ORG_NAME..."
+    REG_TOKEN_RESPONSE=$(curl -s -X POST -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" \
+      "$GITEA_URL/api/v1/orgs/$ORG_NAME/actions/runners/registration-token")
+
+    RUNNER_TOKEN=$(echo "$REG_TOKEN_RESPONSE" | jq -r '.token // empty' 2>/dev/null || true)
+
+    if [ -z "$RUNNER_TOKEN" ] || [ "$RUNNER_TOKEN" = "null" ]; then
+      log "ERROR: Failed to obtain registration token"
+      echo "$REG_TOKEN_RESPONSE"
+      exit 1
+    fi
+    log "Registration token obtained."
+
+    # Write token into a Kubernetes secret
+    log "Storing runner token in secret $TOKEN_SECRET..."
+    kubectl apply -f - <<ENDSECRET
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: $TOKEN_SECRET
+      namespace: $NAMESPACE
+      labels:
+        app.kubernetes.io/managed-by: actions-runner-token-job
+    type: Opaque
+    stringData:
+      token: '$RUNNER_TOKEN'
+    ENDSECRET
+
+    log "--- Actions Runner Token Script Finished Successfully ---"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: actions-runner-token-sa
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: actions-runner-token-role
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: actions-runner-token-binding
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+subjects:
+  - kind: ServiceAccount
+    name: actions-runner-token-sa
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: actions-runner-token-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: actions-runner-token-sync
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  template:
+    spec:
+      serviceAccountName: actions-runner-token-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: token-creator
+          image: alpine:3.22.1
+          command: ["/bin/sh", "/config/run.sh"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: actions-runner-token-script
+            defaultMode: 0755
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  name: gitea-actions-runner-token-push
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  refreshInterval: 1h
+  updatePolicy: Replace
+  secretStoreRefs:
+    - name: gitea-secret-store
+      kind: SecretStore
+  selector:
+    secret:
+      name: gitea-actions-runner-token-source
+  data:
+    - match:
+        secretKey: token
+        remoteRef:
+          remoteKey: gitea-actions-runner-token
+          property: token
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gitea-actions-runner-token
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gitea-secret-store
+    kind: SecretStore
+  target:
+    name: gitea-runner-token
+    creationPolicy: Owner
+  data:
+    - secretKey: token
+      remoteRef:
+        key: gitea-actions-runner-token
+        property: token

@@ -1,9 +1,9 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: tokens.registry.platform.lab
+  name: tokens.registry.local.lab
 spec:
-  group: registry.platform.lab
+  group: registry.local.lab
   names:
     kind: Token
     plural: tokens
@@ -44,7 +44,7 @@ spec:
                 registryHost:
                   type: string
                   description: Registry hostname used in generated dockerconfigjson auths key.
-                  default: git.lab
+                  default: git.local.lab
                 tokenName:
                   type: string
                   description: Access token name in Gitea.

@@ -7,20 +7,32 @@ storage:
 
 network:
   metallb_ip_range: 10.0.0.20-10.0.0.21
-  ingress_nginx_loadbalancer_ip: 10.0.0.20
+  traefik_loadbalancer_ip: 10.0.0.20
   gitea_ssh_loadbalancer_ip: 10.0.0.21
 
   # Optional hardening for Gitea SSH. Delete block to allow all sources.
-  gitea_ssh_allowed_sources:
-    - 10.0.0.0/24
-    - 10.0.10.0/24
+  # gitea_ssh_allowed_sources:
+  #   - 10.0.0.0/24
+  #   - 10.0.10.0/24
 
-ingress:
-  base_domain: lab
+  # Optional hardening for Traefik dashboard. Delete block to allow all sources.
+  # traefik_dashboard_allowed_sources:
+  #   - 10.0.0.0/24
+  #   - 10.0.10.0/24
+
+admin:
+  first_name: Lab
+  last_name: Admin
+  email: lab-admin@local.lab
+
+dns:
+  base_domain: local.lab
   prefixes:
     argocd: cd
     gitea: git
     gitea_ssh: git-ssh
+    keycloak: auth
+    traefik: gateway
     vault: secrets
-    minio: storage
-    minio_api: s3
+    rustfs_console: storage
+    rustfs_api: s3

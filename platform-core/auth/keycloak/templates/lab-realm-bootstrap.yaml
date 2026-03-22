@@ -1,0 +1,84 @@
+{{- $realmName := .Values.realm.name -}}
+{{- $labAdmin := .Values.bootstrap.labAdmin -}}
+---
+apiVersion: realm.keycloak.m.crossplane.io/v1alpha1
+kind: Realm
+metadata:
+  name: "{{ $realmName }}"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  forProvider:
+    realm: "{{ $realmName }}"
+    enabled: true
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: keycloak-provider-config
+---
+apiVersion: group.keycloak.m.crossplane.io/v1alpha1
+kind: Group
+metadata:
+  name: "{{ $labAdmin.groupName }}"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  forProvider:
+    name: "{{ $labAdmin.groupName }}"
+    realmIdRef:
+      name: "{{ $realmName }}"
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: keycloak-provider-config
+---
+apiVersion: user.keycloak.m.crossplane.io/v1alpha1
+kind: User
+metadata:
+  name: "{{ $labAdmin.username }}"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  forProvider:
+    realmIdRef:
+      name: "{{ $realmName }}"
+    username: "{{ $labAdmin.username }}"
+    email: "{{ $labAdmin.profile.email }}"
+    firstName: "{{ $labAdmin.profile.firstName }}"
+    lastName: "{{ $labAdmin.profile.lastName }}"
+    emailVerified: {{ $labAdmin.profile.emailVerified }}
+    requiredActions: {{ $labAdmin.requiredActions | toJson }}
+    enabled: true
+    initialPassword:
+      - temporary: false
+        valueSecretRef:
+          name: "{{ $labAdmin.username }}"
+          key: password
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: keycloak-provider-config
+---
+apiVersion: user.keycloak.m.crossplane.io/v1alpha1
+kind: Groups
+metadata:
+  name: "{{ printf "%s-groups" $labAdmin.username }}"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  forProvider:
+    realmIdRef:
+      name: "{{ $realmName }}"
+    exhaustive: false
+    userIdRef:
+      name: "{{ $labAdmin.username }}"
+    groupIdsRefs:
+      - name: "{{ $labAdmin.groupName }}"
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: keycloak-provider-config

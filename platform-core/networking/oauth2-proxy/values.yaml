@@ -1,0 +1,88 @@
+upstream:
+  fullnameOverride: oauth2-proxy
+
+  config:
+    existingSecret: oauth2-proxy-runtime
+    requiredSecretKeys:
+      - client-id
+      - client-secret
+      - cookie-secret
+    configFile: |
+      provider = "keycloak-oidc"
+      provider_display_name = "Keycloak"
+      oidc_issuer_url = "https://__KEYCLOAK_HOSTNAME__/realms/lab"
+      provider_ca_files = [ "/etc/oauth2-proxy/provider-ca/ca.crt" ]
+      email_domains = [ "*" ]
+      upstreams = [ "static://202" ]
+      reverse_proxy = true
+      skip_provider_button = true
+      code_challenge_method = "S256"
+      scope = "openid profile email"
+      oidc_groups_claim = "groups"
+      cookie_secure = true
+      cookie_httponly = true
+      cookie_samesite = "lax"
+      cookie_refresh = "1h"
+      cookie_domains = [ ".__BASE_DOMAIN__" ]
+      whitelist_domains = [ ".__BASE_DOMAIN__" ]
+      set_xauthrequest = true
+      pass_access_token = false
+      pass_authorization_header = false
+      allowed_groups = [ "lab-admins" ]
+
+  service:
+    type: ClusterIP
+    portNumber: 80
+    targetPort: 4180
+
+  serviceAccount:
+    enabled: true
+    name: oauth2-proxy
+    automountServiceAccountToken: false
+
+  deploymentAnnotations:
+    argocd.argoproj.io/sync-wave: "4"
+
+  ingress:
+    enabled: false
+
+  gatewayApi:
+    enabled: false
+
+  podSecurityContext:
+    fsGroup: 2000
+    runAsNonRoot: true
+
+  extraVolumes:
+    - name: provider-ca
+      secret:
+        secretName: platform-root-ca
+
+  extraVolumeMounts:
+    - name: provider-ca
+      mountPath: /etc/oauth2-proxy/provider-ca
+      readOnly: true
+
+oidc:
+  clientId: oauth2-proxy
+  issuerUrl: https://__KEYCLOAK_HOSTNAME__/realms/lab
+  redirectUris:
+    - https://__TRAEFIK_HOSTNAME__/oauth2/callback
+  allowedGroups:
+    - lab-admins
+  scopes:
+    - openid
+    - profile
+    - email
+
+trustedCaSecretName: platform-root-ca
+cookieSecretName: oauth2-proxy-cookie-secret
+clientSecretName: oauth2-proxy-oidc-client-secret
+runtimeSecretName: oauth2-proxy-runtime
+dashboardHost: __TRAEFIK_HOSTNAME__
+
+referenceGrantNamespaces:
+  - traefik
+
+certificates:
+  clusterIssuer: lab-ca-issuer
