@@ -23,7 +23,7 @@ network:
 admin:
   first_name: Lab
   last_name: Admin
-  email: admin@local.lab
+  email: lab-admin@local.lab
 
 dns:
   base_domain: local.lab
