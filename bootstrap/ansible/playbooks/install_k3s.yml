@@ -2,7 +2,8 @@
   hosts: k3s-server
   become: true
   vars:
-    disable_flannel: true
+    flannel_backend_none: true
+    disable_network_policy: true
     disable_traefik: true
     disable_servicelb: true
     disable_embedded_registry: true

@@ -12,7 +12,8 @@ Role Variables
 --------------
 
 - `k3s_install_version`: The version of k3s to install. Defaults to `""` (empty string), which triggers the installation of the current stable version from https://get.k3s.io. If a version is specified, the role will ensure that version is installed.
-- `disable_flannel`: Boolean to disable flannel CNI.
+- `flannel_backend_none`: Boolean to set `flannel-backend: none` in the k3s config. Required when running a custom CNI such as Cilium. (`flannel` is not a valid entry in the `disable` list — `flannel-backend: none` is the supported way to turn off the built-in CNI.)
+- `disable_network_policy`: Boolean to set `disable-network-policy: true` in the k3s config. Should be `true` when using a custom CNI that provides its own NetworkPolicy enforcement (e.g. Cilium), to prevent k3s's built-in NetworkPolicy controller from conflicting.
 - `disable_traefik`: Boolean to disable traefik ingress.
 - `disable_servicelb`: Boolean to disable servicelb.
 - `disable_embedded_registry`: Boolean to disable embedded registry.
