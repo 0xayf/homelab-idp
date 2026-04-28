@@ -1,9 +1,12 @@
 write-kubeconfig-mode: "0644"
-{% if disable_flannel or disable_traefik or disable_servicelb or disable_embedded_registry %}
-disable:
-{% if disable_flannel %}
-  - flannel
+{% if flannel_backend_none %}
+flannel-backend: none
 {% endif %}
+{% if disable_network_policy %}
+disable-network-policy: true
+{% endif %}
+{% if disable_traefik or disable_servicelb or disable_embedded_registry %}
+disable:
 {% if disable_traefik %}
   - traefik
 {% endif %}

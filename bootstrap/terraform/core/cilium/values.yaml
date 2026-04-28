@@ -1,3 +1,18 @@
 operator:
   # The default is 2 for HA, which fails on a single node. We need only 1.
   replicas: 1
+
+# Defer to Kubernetes for per-node pod CIDR allocation. With cluster-pool
+# (Cilium's default), the operator picks a CIDR from its own pool which may
+# collide with the host network or diverge from k3s's cluster-cidr. With
+# ipam.mode: kubernetes, Cilium reads each node's spec.podCIDR (allocated
+# by k3s from cluster-cidr), keeping IP allocation in lock-step with k3s
+# regardless of what network the cluster is deployed on.
+ipam:
+  mode: kubernetes
+
+# Refuse to coexist with another CNI's conflist in /etc/cni/net.d/. Defensive
+# against a stale conflist from a previous CNI (e.g. flannel) being left
+# behind on the node.
+cni:
+  exclusive: true
