@@ -4,5 +4,5 @@ description: Wrapper chart to deploy Cilium CNI for platform networking and secu
 version: 0.1.0
 dependencies:
   - name: cilium
-    version: "1.18.5"
+    version: "1.19.3"
     repository: "https://helm.cilium.io/"

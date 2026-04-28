@@ -7,5 +7,5 @@ variable "namespace" {
 variable "cilium_chart_version" {
   description = "The version of the Cilium Helm chart to deploy."
   type        = string
-  default     = "1.18.5"
+  default     = "1.19.3"
 }
