@@ -1,0 +1,124 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: pats.registry.local.lab
+spec:
+  group: registry.local.lab
+  names:
+    kind: PAT
+    plural: pats
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                userRef:
+                  type: object
+                  description: |-
+                    Reference to a User XR (in the same namespace) whose credentials
+                    are used to authenticate the PAT creation. The PAT is owned by
+                    that user.
+                  properties:
+                    name:
+                      type: string
+                  required:
+                    - name
+                tokenName:
+                  type: string
+                  description: Name of the access token in Gitea. Defaults to metadata.name.
+                scopes:
+                  type: array
+                  description: |-
+                    Token scopes (e.g. write:repository, read:user). Empty grants no
+                    explicit scopes (Gitea defaults apply).
+                  items:
+                    type: string
+                  default: []
+                endpoint:
+                  type: string
+                  description: |-
+                    Gitea base URL the Crossplane provider uses to authenticate
+                    when minting the token. Defaults to the in-cluster service
+                    URL because the provider doesn't trust the platform CA out
+                    of the box; override with an external HTTPS URL only if the
+                    provider's deployment trust store is configured to validate
+                    its certificate. Set on ProviderConfig.spec.endpoint, so
+                    the credentials secret carries only username/password.
+                  default: http://gitea-http.gitea.svc.cluster.local:3000
+                kubernetesSecret:
+                  type: object
+                  description: Optionally materialise the token into an in-namespace K8s secret.
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    name:
+                      type: string
+                      description: K8s secret name. Defaults to metadata.name.
+                    key:
+                      type: string
+                      description: Key in the secret holding the raw token.
+                      default: token
+                actionsSecrets:
+                  type: array
+                  description: |-
+                    Optionally distribute the freshly-minted PAT as one or
+                    more Gitea Actions secrets. Each entry composes an
+                    ActionsSecret XR alongside the Token MR, sourcing the
+                    value from this PAT's connection secret.
+                  items:
+                    type: object
+                    required:
+                      - secretName
+                      - scope
+                    properties:
+                      secretName:
+                        type: string
+                        description: Name workflows reference as ${{ secrets.* }}.
+                      scope:
+                        type: object
+                        required:
+                          - type
+                        properties:
+                          type:
+                            type: string
+                            enum: [org, repo, user]
+                          org:
+                            type: string
+                          repo:
+                            type: object
+                            properties:
+                              owner:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                              - owner
+                              - name
+                          userRef:
+                            type: object
+                            description: |-
+                              Optional. When type=user and userRef is omitted,
+                              defaults to PAT.spec.userRef (i.e. the secret is
+                              set on the same user that owns the PAT).
+                            properties:
+                              name:
+                                type: string
+                            required:
+                              - name
+              required:
+                - userRef
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                vaultPath:
+                  type: string
+                  description: Vault KV v2 path where the raw token is stored.

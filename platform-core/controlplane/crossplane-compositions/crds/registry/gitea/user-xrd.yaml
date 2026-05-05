@@ -24,23 +24,28 @@ spec:
                 email:
                   type: string
                   description: Email for the user. Defaults to <username>@<namespace>.local.
-                passwordSecretName:
+                fullName:
                   type: string
-                  description: Secret name that contains password key.
-                  default: ""
-                passwordSecretKey:
-                  type: string
-                  description: Secret key containing password.
-                  default: password
+                  description: Optional display name. Defaults to username.
+                passwordLength:
+                  type: integer
+                  description: Length of the auto-generated password.
+                  default: 32
+                  minimum: 16
+                  maximum: 128
                 providerConfigName:
                   type: string
-                  description: ClusterProviderConfig name for provider-upjet-gitea.
+                  description: ClusterProviderConfig name for the Gitea provider.
                   default: gitea-provider-config
-              required:
-                - passwordSecretName
             status:
               type: object
               properties:
                 ready:
                   type: boolean
                   description: Whether the user is ready.
+                vaultPath:
+                  type: string
+                  description: Vault path where the password is stored.
+                credentialsSecretName:
+                  type: string
+                  description: Name of the in-namespace K8s secret with username/password fields.

@@ -1,0 +1,34 @@
+# Example: Mint a Gitea Personal Access Token for an existing User XR.
+#
+# The composition:
+#   - creates a per-PAT ProviderConfig that authenticates as the referenced User
+#   - creates a Token managed resource under that user's identity
+#   - pushes the raw token to Vault at platform/<ns>/kv/<name>
+#   - optionally materialises an in-namespace K8s secret with the token
+#   - optionally fans the token out as one or more Gitea Actions secrets
+#     (composed via the ActionsSecret XR)
+apiVersion: registry.local.lab/v1alpha1
+kind: PAT
+metadata:
+  name: svc-ci-bot-pat
+  namespace: crossplane-examples
+spec:
+  userRef:
+    name: svc-ci-bot
+  scopes:
+    - write:repository
+  # Distribute the freshly-minted PAT as Gitea Actions secrets. Each entry
+  # composes an ActionsSecret XR alongside the Token MR, sourcing the value
+  # from this PAT's connection secret. List form lets a single PAT land in
+  # multiple orgs, repos, or user accounts in one claim.
+  actionsSecrets:
+    - secretName: CI_BOT_TOKEN
+      scope:
+        type: org
+        org: apps
+  # endpoint defaults to the in-cluster service URL; override only if the
+  # Crossplane provider's deployment trusts the cert presented by an
+  # external Gitea URL (HTTPS).
+  # kubernetesSecret defaults to disabled. Vault is the source of truth;
+  # set kubernetesSecret.enabled: true if a consumer needs the token in
+  # an in-namespace K8s secret.

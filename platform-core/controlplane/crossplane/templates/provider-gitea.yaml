@@ -54,7 +54,7 @@ metadata:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  package: ghcr.io/0xayf/provider-upjet-gitea:v0.1.4
+  package: ghcr.io/0xayf/provider-upjet-gitea:v0.2.3
   runtimeConfigRef:
     name: provider-gitea-runtime-config
 ---

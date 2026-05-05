@@ -1,11 +1,22 @@
-# Example: Create app service user from UserPass-generated password secret
+# Example: Create a Gitea service-account user with an auto-generated password.
+#
+# The composition internally:
+#   - generates a random password (via UserPass)
+#   - pushes it to Vault at platform/<ns>/kv/<name>
+#   - materialises an in-namespace K8s secret with username/password fields
+#   - creates the Gitea user using that password
+#
+# Status fields exposed for downstream consumers (PAT, RegistryToken):
+#   .status.credentialsSecretName  - K8s secret with username + password
+#   .status.vaultPath              - Vault path where the password is stored
 apiVersion: registry.local.lab/v1alpha1
 kind: User
 metadata:
-  name: app-demo-split
+  name: svc-ci-bot
   namespace: crossplane-examples
 spec:
-  username: app-demo-split
-  email: app-demo-split@crossplane-examples.local
-  passwordSecretName: app-demo-split-userpass
-  passwordSecretKey: password
+  username: svc-ci_bot
+  fullName: "CI Bot"
+  email: "ci-bot@local.lab"
+  # email defaults to <username>@<namespace>.local if omitted
+  # passwordLength defaults to 32
