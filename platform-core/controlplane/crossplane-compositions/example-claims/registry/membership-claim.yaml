@@ -1,11 +1,32 @@
-# Example: Add app-demo-split user to team ID 2
+# Example: add a user to a team in Gitea.
 #
-# Note: teamId is required by provider Membership resource.
-# You can fetch it from Team managed resource status.atProvider.id.
+# Two ways to point at the team:
+#   1. spec.teamId   - raw numeric ID (look it up via the Team MR's
+#                       status.atProvider.id, or by hitting the Gitea API).
+#   2. spec.teamRef  - reference to a sibling Team XR by name; the
+#                       composition fetches the Team's status.teamId via
+#                       function-go-templating ExtraResources, so the claim
+#                       never needs to know the numeric ID.
+#
+# Prefer teamRef. teamId remains for back-compat with hand-authored claims.
+
+# --- teamRef form (preferred) ---------------------------------------------
 apiVersion: registry.local.lab/v1alpha1
 kind: Membership
 metadata:
   name: app-demo-split-demo-split-registry
+  namespace: crossplane-examples
+spec:
+  username: app-demo-split
+  teamRef:
+    name: demo-split-registry
+    # namespace defaults to the Membership XR's namespace
+---
+# --- teamId form (back-compat) --------------------------------------------
+apiVersion: registry.local.lab/v1alpha1
+kind: Membership
+metadata:
+  name: app-demo-split-demo-split-registry-byid
   namespace: crossplane-examples
 spec:
   username: app-demo-split

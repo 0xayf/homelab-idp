@@ -20,21 +20,52 @@ spec:
               properties:
                 username:
                   type: string
-                  description: Gitea username to add to team.
+                  description: Gitea username to add to the team.
                 teamId:
                   type: integer
                   format: int64
-                  description: Team ID in Gitea.
+                  description: |
+                    Team ID in Gitea. Set this for back-compat with claims
+                    that already know the numeric team ID. Prefer teamRef
+                    in new claims so the ID is resolved automatically from
+                    a sibling Team XR.
+                teamRef:
+                  type: object
+                  description: |
+                    Reference to a Team XR (registry.local.lab/v1alpha1).
+                    The composition fetches the referenced Team via
+                    function-go-templating's ExtraResources and reads the
+                    numeric ID from its status.teamId. Mutually exclusive
+                    with teamId.
+                  properties:
+                    name:
+                      type: string
+                      description: Name of the Team XR to reference.
+                    namespace:
+                      type: string
+                      description: |
+                        Namespace of the Team XR. Defaults to the
+                        Membership XR's own namespace.
+                  required:
+                    - name
                 providerConfigName:
                   type: string
-                  description: ClusterProviderConfig name for provider-upjet-gitea.
+                  description: ClusterProviderConfig name for the Gitea provider.
                   default: gitea-provider-config
               required:
                 - username
-                - teamId
+              oneOf:
+                - required: [teamId]
+                - required: [teamRef]
             status:
               type: object
               properties:
                 ready:
                   type: boolean
                   description: Whether the membership is ready.
+                resolvedTeamId:
+                  type: string
+                  description: |
+                    Team ID actually used when composing the underlying
+                    managed resource. Mirrors teamId or the value
+                    resolved from teamRef, whichever was set.

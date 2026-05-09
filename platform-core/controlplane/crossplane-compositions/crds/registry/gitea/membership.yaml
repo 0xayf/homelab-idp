@@ -25,8 +25,50 @@ spec:
             {{- $name := $xr.metadata.name -}}
             {{- $namespace := $xr.metadata.namespace -}}
             {{- $username := $xr.spec.username -}}
-            {{- $teamID := int64 $xr.spec.teamId -}}
             {{- $providerConfigName := default "gitea-provider-config" $xr.spec.providerConfigName -}}
+            {{- $teamRef := default dict $xr.spec.teamRef -}}
+            {{- $teamRefName := default "" $teamRef.name -}}
+            {{- $teamRefNamespace := default $namespace $teamRef.namespace -}}
+
+            {{- /*
+              Always emit the ExtraResources requirement when teamRef is set
+              so Crossplane fetches the referenced Team XR and re-runs this
+              function with .extraResources populated. function-go-templating
+              v0.11 doesn't honour matchName for namespaced XRs, so we match
+              on the crossplane.io/composite label that Crossplane v2
+              auto-sets on every namespaced composite (value = the XR's own
+              metadata.name). This is internal Crossplane behaviour that's
+              been stable since v2.0.
+            */ -}}
+            {{- if ne $teamRefName "" }}
+            ---
+            apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+            kind: ExtraResources
+            requirements:
+              team:
+                apiVersion: registry.local.lab/v1alpha1
+                kind: Team
+                matchLabels:
+                  crossplane.io/composite: {{ $teamRefName | quote }}
+                namespace: {{ $teamRefNamespace | quote }}
+            {{- end }}
+
+            {{- /* Resolve teamId: spec.teamId wins; otherwise read it from the
+                  fetched Team XR's status.teamId. Empty until the first pass
+                  has produced an ExtraResources requirement and Crossplane has
+                  fed the result back in. */ -}}
+            {{- $teamID := "" -}}
+            {{- if $xr.spec.teamId -}}
+              {{- $teamID = printf "%v" $xr.spec.teamId -}}
+            {{- else if .extraResources -}}
+              {{- $teamItems := (index .extraResources "team").items | default list -}}
+              {{- if $teamItems -}}
+                {{- $first := index $teamItems 0 -}}
+                {{- $teamID = $first.resource.status.teamId | default "" -}}
+              {{- end -}}
+            {{- end -}}
+
+            {{- if ne $teamID "" }}
             ---
             apiVersion: team.gitea.m.crossplane.io/v1alpha1
             kind: Membership
@@ -42,13 +84,15 @@ spec:
               providerConfigRef:
                 kind: ClusterProviderConfig
                 name: {{ $providerConfigName }}
+            {{- end }}
             ---
             apiVersion: registry.local.lab/v1alpha1
             kind: Membership
             metadata:
               name: {{ $name }}
             status:
-              ready: true
+              ready: {{ ne $teamID "" }}
+              resolvedTeamId: {{ $teamID | quote }}
 
     - step: auto-ready
       functionRef:
